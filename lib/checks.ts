@@ -92,7 +92,7 @@ export async function runProviderChecks(): Promise<CheckResult[]> {
           type: config.type,
           endpoint: config.endpoint,
           model: config.model,
-          status: "failed",
+          status: "failed" as const,
           latencyMs: null,
           checkedAt: new Date().toISOString(),
           message: err?.message || "未知错误",
