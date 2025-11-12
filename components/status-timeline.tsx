@@ -11,11 +11,21 @@ interface TimelineItem extends CheckResult {
 
 interface StatusTimelineProps {
   items: TimelineItem[];
+  nextRefreshInMs?: number | null;
 }
 
 const SEGMENT_LIMIT = 60;
+const formatRemainingTime = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes > 0) {
+    return `${minutes}分${seconds.toString().padStart(2, "0")}秒`;
+  }
+  return `${seconds}秒`;
+};
 
-export function StatusTimeline({ items }: StatusTimelineProps) {
+export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) {
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
@@ -27,6 +37,8 @@ export function StatusTimeline({ items }: StatusTimelineProps) {
   const segments = Array.from({ length: SEGMENT_LIMIT }, (_, index) =>
     items[index] ?? null
   );
+  const nextRefreshLabel =
+    typeof nextRefreshInMs === "number" ? formatRemainingTime(nextRefreshInMs) : null;
 
   return (
     <div className="space-y-3">
@@ -79,6 +91,13 @@ export function StatusTimeline({ items }: StatusTimelineProps) {
       </div>
       <div className="flex items-center justify-between text-[10px] font-medium text-muted-foreground">
         <span>+60 min</span>
+        {nextRefreshLabel ? (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary/80">
+            下次刷新 {nextRefreshLabel}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/70">手动刷新</span>
+        )}
         <span>最新</span>
       </div>
     </div>

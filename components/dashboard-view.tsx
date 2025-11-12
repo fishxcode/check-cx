@@ -23,12 +23,17 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lockRef = useRef(false);
+  const lastRefreshRef = useRef<number>(Date.now());
+  const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
+    initialData.pollIntervalMs ?? null
+  );
 
   const refresh = useCallback(async () => {
     if (lockRef.current) {
       return;
     }
     lockRef.current = true;
+    lastRefreshRef.current = Date.now();
     setIsRefreshing(true);
     try {
       const response = await fetch("/api/dashboard", { cache: "no-store" });
@@ -47,6 +52,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
 
   useEffect(() => {
     setData(initialData);
+    lastRefreshRef.current = Date.now();
   }, [initialData]);
 
   useEffect(() => {
@@ -58,6 +64,23 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     }, data.pollIntervalMs);
     return () => window.clearInterval(timer);
   }, [data.pollIntervalMs, refresh]);
+
+  useEffect(() => {
+    if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
+      setTimeToNextRefresh(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining =
+        data.pollIntervalMs - (Date.now() - lastRefreshRef.current);
+      setTimeToNextRefresh(Math.max(0, remaining));
+    };
+
+    updateCountdown();
+    const countdownTimer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(countdownTimer);
+  }, [data.pollIntervalMs]);
 
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
 
@@ -175,7 +198,7 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                   </div>
                 </CardHeader>
                 <CardContent className="relative z-10 border-t border-border/60 pt-4">
-                  <StatusTimeline items={items} />
+                  <StatusTimeline items={items} nextRefreshInMs={timeToNextRefresh} />
                 </CardContent>
               </Card>
             );
