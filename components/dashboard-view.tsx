@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProviderIcon } from "@/components/provider-icon";
 import { StatusTimeline } from "@/components/status-timeline";
@@ -19,13 +19,39 @@ interface DashboardViewProps {
   initialData: DashboardData;
 }
 
+const getLatestCheckTimestamp = (
+  timelines: DashboardData["providerTimelines"]
+) => {
+  const timestamps = timelines.map((timeline) =>
+    new Date(timeline.latest.checkedAt).getTime()
+  );
+  return timestamps.length > 0 ? Math.max(...timestamps) : null;
+};
+
+const computeRemainingMs = (
+  pollIntervalMs: number | null | undefined,
+  latestCheckTimestamp: number | null
+) => {
+  if (!pollIntervalMs || pollIntervalMs <= 0 || latestCheckTimestamp === null) {
+    return null;
+  }
+  const remaining = pollIntervalMs - (Date.now() - latestCheckTimestamp);
+  return Math.max(0, remaining);
+};
+
 export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lockRef = useRef(false);
-  const lastRefreshRef = useRef<number>(Date.now());
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
-    initialData.pollIntervalMs ?? null
+    computeRemainingMs(
+      initialData.pollIntervalMs,
+      getLatestCheckTimestamp(initialData.providerTimelines)
+    )
+  );
+  const latestCheckTimestamp = useMemo(
+    () => getLatestCheckTimestamp(data.providerTimelines),
+    [data.providerTimelines]
   );
 
   const refresh = useCallback(async () => {
@@ -33,7 +59,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       return;
     }
     lockRef.current = true;
-    lastRefreshRef.current = Date.now();
     setIsRefreshing(true);
     try {
       const response = await fetch("/api/dashboard", { cache: "no-store" });
@@ -52,7 +77,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
 
   useEffect(() => {
     setData(initialData);
-    lastRefreshRef.current = Date.now();
   }, [initialData]);
 
   useEffect(() => {
@@ -66,21 +90,21 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   }, [data.pollIntervalMs, refresh]);
 
   useEffect(() => {
-    if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
+    if (!data.pollIntervalMs || data.pollIntervalMs <= 0 || latestCheckTimestamp === null) {
       setTimeToNextRefresh(null);
       return;
     }
 
     const updateCountdown = () => {
-      const remaining =
-        data.pollIntervalMs - (Date.now() - lastRefreshRef.current);
-      setTimeToNextRefresh(Math.max(0, remaining));
+      setTimeToNextRefresh(
+        computeRemainingMs(data.pollIntervalMs, latestCheckTimestamp)
+      );
     };
 
     updateCountdown();
     const countdownTimer = window.setInterval(updateCountdown, 1000);
     return () => window.clearInterval(countdownTimer);
-  }, [data.pollIntervalMs]);
+  }, [data.pollIntervalMs, latestCheckTimestamp]);
 
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
 
