@@ -7,6 +7,28 @@ import {
 } from "@/lib/polling-config";
 
 type RefreshMode = "always" | "missing" | "never";
+type HistorySnapshot = Awaited<ReturnType<typeof loadHistory>>;
+
+interface PingCacheEntry {
+  lastPingAt: number;
+  inflight?: Promise<HistorySnapshot>;
+  history?: HistorySnapshot;
+}
+
+const globalForPing = globalThis as typeof globalThis & {
+  __CHECK_CX_PING_CACHE__?: Record<string, PingCacheEntry>;
+};
+
+const pingCacheStore =
+  globalForPing.__CHECK_CX_PING_CACHE__ ??
+  (globalForPing.__CHECK_CX_PING_CACHE__ = {});
+
+function getPingCacheEntry(key: string): PingCacheEntry {
+  if (!pingCacheStore[key]) {
+    pingCacheStore[key] = { lastPingAt: 0 };
+  }
+  return pingCacheStore[key];
+}
 
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
@@ -41,6 +63,12 @@ const formatTime = (iso: string) => timeFormatter.format(new Date(iso));
 export async function loadDashboardData(options?: { refreshMode?: RefreshMode }) {
   const configs = loadProviderConfigs();
   const allowedIds = new Set(configs.map((item) => item.id));
+  const pollIntervalMs = getPollingIntervalMs();
+  const pollIntervalLabel = getPollingIntervalLabel();
+  const providerKey =
+    allowedIds.size > 0 ? [...allowedIds].sort().join("|") : "__empty__";
+  const cacheKey = `${pollIntervalMs}:${providerKey}`;
+  const cacheEntry = getPingCacheEntry(cacheKey);
 
   const filterHistory = (history: Awaited<ReturnType<typeof loadHistory>>) => {
     if (allowedIds.size === 0) {
@@ -57,11 +85,35 @@ export async function loadDashboardData(options?: { refreshMode?: RefreshMode })
     if (allowedIds.size === 0) {
       return {};
     }
-    const results = await runProviderChecks();
-    if (results.length > 0) {
-      return filterHistory(await appendHistory(results));
+    const now = Date.now();
+    if (cacheEntry.history && now - cacheEntry.lastPingAt < pollIntervalMs) {
+      return cacheEntry.history;
     }
-    return readFilteredHistory();
+    if (cacheEntry.inflight) {
+      return cacheEntry.inflight;
+    }
+
+    const inflightPromise = (async () => {
+      const results = await runProviderChecks();
+      let nextHistory: HistorySnapshot;
+      if (results.length > 0) {
+        nextHistory = filterHistory(await appendHistory(results));
+      } else {
+        nextHistory = await readFilteredHistory();
+      }
+      cacheEntry.history = nextHistory;
+      cacheEntry.lastPingAt = Date.now();
+      return nextHistory;
+    })();
+
+    cacheEntry.inflight = inflightPromise;
+    try {
+      return await inflightPromise;
+    } finally {
+      if (cacheEntry.inflight === inflightPromise) {
+        cacheEntry.inflight = undefined;
+      }
+    }
   };
 
   let history = await readFilteredHistory();
@@ -118,7 +170,7 @@ export async function loadDashboardData(options?: { refreshMode?: RefreshMode })
     providerTimelines,
     lastUpdated,
     total: providerTimelines.length,
-    pollIntervalLabel: getPollingIntervalLabel(),
-    pollIntervalMs: getPollingIntervalMs(),
+    pollIntervalLabel,
+    pollIntervalMs,
   };
 }
