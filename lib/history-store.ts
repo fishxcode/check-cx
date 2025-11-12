@@ -108,15 +108,61 @@ export async function appendHistory(
       console.error("[check-cx] 写入数据库失败", error);
     }
 
-    // 清理过期数据（保留最近 1 小时）
-    const cutoff = new Date(Date.now() - HISTORY_WINDOW_MS).toISOString();
-    const { error: deleteError } = await supabase
-      .from("check_history")
-      .delete()
-      .lt("checked_at", cutoff);
+    // 清理超出限制的数据（每个提供商只保留最新 60 条记录）
+    try {
+      // 获取所有唯一的 provider_id
+      const { data: providers, error: providerError } = await supabase
+        .from("check_history")
+        .select("provider_id")
+        .order("provider_id");
 
-    if (deleteError) {
-      console.error("[check-cx] 清理过期数据失败", deleteError);
+      if (providerError) {
+        console.error("[check-cx] 查询 provider_id 失败", providerError);
+      } else if (providers) {
+        // 去重获取唯一的 provider_id
+        const uniqueProviders = [
+          ...new Set(providers.map((p) => p.provider_id)),
+        ];
+
+        // 对每个提供商，删除超出限制的旧记录
+        for (const providerId of uniqueProviders) {
+          // 获取该提供商的所有记录，按时间倒序
+          const { data: records, error: recordError } = await supabase
+            .from("check_history")
+            .select("id, checked_at")
+            .eq("provider_id", providerId)
+            .order("checked_at", { ascending: false });
+
+          if (recordError) {
+            console.error(
+              `[check-cx] 查询 provider ${providerId} 的记录失败`,
+              recordError
+            );
+            continue;
+          }
+
+          // 如果超过 60 条，删除多余的旧记录
+          if (records && records.length > MAX_POINTS_PER_PROVIDER) {
+            const recordsToDelete = records
+              .slice(MAX_POINTS_PER_PROVIDER)
+              .map((r) => r.id);
+
+            const { error: deleteError } = await supabase
+              .from("check_history")
+              .delete()
+              .in("id", recordsToDelete);
+
+            if (deleteError) {
+              console.error(
+                `[check-cx] 删除 provider ${providerId} 的旧记录失败`,
+                deleteError
+              );
+            }
+          }
+        }
+      }
+    } catch (cleanupError) {
+      console.error("[check-cx] 清理数据时发生错误", cleanupError);
     }
 
     return loadHistory();
