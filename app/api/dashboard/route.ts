@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { loadDashboardData } from "@/lib/dashboard-data";
+import { loadDashboardData } from "@/lib/core/dashboard-data";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";

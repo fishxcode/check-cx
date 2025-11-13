@@ -12,8 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { DashboardData } from "@/lib/dashboard-data";
-import { PROVIDER_LABEL, STATUS_META } from "@/lib/status";
+import type { DashboardData } from "@/lib/types";
+import { PROVIDER_LABEL, STATUS_META } from "@/lib/core/status";
 
 interface DashboardViewProps {
   initialData: DashboardData;

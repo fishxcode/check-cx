@@ -1,13 +1,9 @@
 "use client";
 
 import { ProviderIcon } from "@/components/provider-icon";
-import type { CheckResult } from "@/lib/checks";
-import { PROVIDER_LABEL, STATUS_META } from "@/lib/status";
+import type { TimelineItem } from "@/lib/types";
+import { PROVIDER_LABEL, STATUS_META } from "@/lib/core/status";
 import { cn } from "@/lib/utils";
-
-interface TimelineItem extends CheckResult {
-  formattedTime: string;
-}
 
 interface StatusTimelineProps {
   items: TimelineItem[];

@@ -1,35 +1,22 @@
-import type { CheckResult } from "@/lib/checks";
-import { loadProviderConfigsFromDB, runProviderChecks } from "@/lib/checks";
-import { appendHistory, loadHistory } from "@/lib/history-store";
-import {
-  getPollingIntervalLabel,
-  getPollingIntervalMs,
-} from "@/lib/polling-config";
+/**
+ * Dashboard 数据聚合模块
+ */
 
-type RefreshMode = "always" | "missing" | "never";
-type HistorySnapshot = Awaited<ReturnType<typeof loadHistory>>;
+import { loadProviderConfigsFromDB } from "../database/config-loader";
+import { runProviderChecks } from "../providers";
+import { appendHistory, loadHistory } from "../database/history";
+import { getPollingIntervalLabel, getPollingIntervalMs } from "./polling-config";
+import { getPingCacheEntry } from "./global-state";
+import type {
+  ProviderTimeline,
+  DashboardData,
+  RefreshMode,
+  HistorySnapshot,
+} from "../types";
 
-interface PingCacheEntry {
-  lastPingAt: number;
-  inflight?: Promise<HistorySnapshot>;
-  history?: HistorySnapshot;
-}
-
-const globalForPing = globalThis as typeof globalThis & {
-  __CHECK_CX_PING_CACHE__?: Record<string, PingCacheEntry>;
-};
-
-const pingCacheStore =
-  globalForPing.__CHECK_CX_PING_CACHE__ ??
-  (globalForPing.__CHECK_CX_PING_CACHE__ = {});
-
-function getPingCacheEntry(key: string): PingCacheEntry {
-  if (!pingCacheStore[key]) {
-    pingCacheStore[key] = { lastPingAt: 0 };
-  }
-  return pingCacheStore[key];
-}
-
+/**
+ * 时间格式化器
+ */
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
   year: "numeric",
@@ -40,27 +27,19 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   second: "2-digit",
 });
 
-export interface TimelineItem extends CheckResult {
-  formattedTime: string;
-}
-
-export interface ProviderTimeline {
-  id: string;
-  items: TimelineItem[];
-  latest: TimelineItem;
-}
-
-export interface DashboardData {
-  providerTimelines: ProviderTimeline[];
-  lastUpdated: string | null;
-  total: number;
-  pollIntervalLabel: string;
-  pollIntervalMs: number;
-}
-
+/**
+ * 格式化 ISO 时间字符串
+ */
 const formatTime = (iso: string) => timeFormatter.format(new Date(iso));
 
-export async function loadDashboardData(options?: { refreshMode?: RefreshMode }) {
+/**
+ * 加载 Dashboard 数据
+ * @param options 选项
+ * @returns Dashboard 数据
+ */
+export async function loadDashboardData(options?: {
+  refreshMode?: RefreshMode;
+}): Promise<DashboardData> {
   const configs = await loadProviderConfigsFromDB();
   const allowedIds = new Set(configs.map((item) => item.id));
   const pollIntervalMs = getPollingIntervalMs();
@@ -70,7 +49,7 @@ export async function loadDashboardData(options?: { refreshMode?: RefreshMode })
   const cacheKey = `${pollIntervalMs}:${providerKey}`;
   const cacheEntry = getPingCacheEntry(cacheKey);
 
-  const filterHistory = (history: Awaited<ReturnType<typeof loadHistory>>) => {
+  const filterHistory = (history: HistorySnapshot): HistorySnapshot => {
     if (allowedIds.size === 0) {
       return {};
     }
@@ -94,7 +73,7 @@ export async function loadDashboardData(options?: { refreshMode?: RefreshMode })
     }
 
     const inflightPromise = (async () => {
-      const results = await runProviderChecks();
+      const results = await runProviderChecks(configs);
       let nextHistory: HistorySnapshot;
       if (results.length > 0) {
         nextHistory = filterHistory(await appendHistory(results));
@@ -164,7 +143,9 @@ export async function loadDashboardData(options?: { refreshMode?: RefreshMode })
         new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime()
     );
 
-  const lastUpdated = allEntries.length ? formatTime(allEntries[0].checkedAt) : null;
+  const lastUpdated = allEntries.length
+    ? formatTime(allEntries[0].checkedAt)
+    : null;
 
   return {
     providerTimelines,

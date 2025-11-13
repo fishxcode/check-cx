@@ -1,5 +1,5 @@
 import { DashboardView } from "@/components/dashboard-view";
-import { loadDashboardData } from "@/lib/dashboard-data";
+import { loadDashboardData } from "@/lib/core/dashboard-data";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

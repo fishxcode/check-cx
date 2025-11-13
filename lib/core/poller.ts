@@ -1,18 +1,30 @@
-import { appendHistory } from "@/lib/history-store";
-import { runProviderChecks, type HealthStatus } from "@/lib/checks";
-import { getPollingIntervalMs } from "@/lib/polling-config";
+/**
+ * 后台轮询器
+ * 在应用启动时自动初始化并持续运行
+ */
+
+import { appendHistory } from "../database/history";
+import { loadProviderConfigsFromDB } from "../database/config-loader";
+import { runProviderChecks } from "../providers";
+import { getPollingIntervalMs } from "./polling-config";
+import {
+  getPollerTimer,
+  setPollerTimer,
+  isPollerRunning,
+  setPollerRunning,
+  getLastPingStartedAt,
+  setLastPingStartedAt,
+} from "./global-state";
+import type { HealthStatus } from "../types";
 
 const POLL_INTERVAL_MS = getPollingIntervalMs();
 
-const globalWithPoller = globalThis as typeof globalThis & {
-  __checkCxPoller?: NodeJS.Timeout;
-  __checkCxPollerRunning?: boolean;
-  __checkCxLastPingStartedAt?: number;
-};
-
+/**
+ * 执行一次轮询检查
+ */
 async function tick() {
-  if (globalWithPoller.__checkCxPollerRunning) {
-    const lastStartedAt = globalWithPoller.__checkCxLastPingStartedAt;
+  if (isPollerRunning()) {
+    const lastStartedAt = getLastPingStartedAt();
     const duration = lastStartedAt ? Date.now() - lastStartedAt : null;
     console.log(
       `[check-cx] 跳过 ping：上一轮仍在执行${
@@ -23,22 +35,22 @@ async function tick() {
   }
 
   const startedAt = Date.now();
-  globalWithPoller.__checkCxLastPingStartedAt = startedAt;
+  setLastPingStartedAt(startedAt);
   console.log(
     `[check-cx] 后台 ping 开始 · ${new Date(
       startedAt
     ).toISOString()} · interval=${POLL_INTERVAL_MS}ms`
   );
 
-  globalWithPoller.__checkCxPollerRunning = true;
+  setPollerRunning(true);
   try {
-    const results = await runProviderChecks();
-    if (results.length === 0) {
-      console.log(
-        `[check-cx] 数据库中未找到启用的配置，本轮 ping 结束`
-      );
+    const configs = await loadProviderConfigsFromDB();
+    if (configs.length === 0) {
+      console.log(`[check-cx] 数据库中未找到启用的配置，本轮 ping 结束`);
       return;
     }
+
+    const results = await runProviderChecks(configs);
 
     console.log("[check-cx] 本轮检测明细：");
     results.forEach((result) => {
@@ -57,9 +69,7 @@ async function tick() {
       );
     });
 
-    console.log(
-      `[check-cx] 正在写入历史记录（${results.length} 条）…`
-    );
+    console.log(`[check-cx] 正在写入历史记录（${results.length} 条）…`);
     const historySnapshot = await appendHistory(results);
     const providerCount = Object.keys(historySnapshot).length;
     const recordCount = Object.values(historySnapshot).reduce(
@@ -92,16 +102,16 @@ async function tick() {
   } catch (error) {
     console.error("[check-cx] 轮询检测失败", error);
   } finally {
-    globalWithPoller.__checkCxPollerRunning = false;
+    setPollerRunning(false);
   }
 }
 
-if (!globalWithPoller.__checkCxPoller) {
-  console.log(
-    `[check-cx] 初始化后台轮询器，interval=${POLL_INTERVAL_MS}ms`
-  );
+// 自动初始化轮询器
+if (!getPollerTimer()) {
+  console.log(`[check-cx] 初始化后台轮询器，interval=${POLL_INTERVAL_MS}ms`);
   tick().catch((error) => console.error("[check-cx] 初次检测失败", error));
-  globalWithPoller.__checkCxPoller = setInterval(() => {
+  const timer = setInterval(() => {
     tick().catch((error) => console.error("[check-cx] 定时检测失败", error));
   }, POLL_INTERVAL_MS);
+  setPollerTimer(timer);
 }

@@ -1,4 +1,4 @@
-import type { HealthStatus, ProviderType } from "@/lib/checks";
+import type { HealthStatus, ProviderType } from "../types";
 
 export const STATUS_META: Record<
   HealthStatus,

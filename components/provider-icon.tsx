@@ -2,7 +2,7 @@
 
 import { Anthropic, Gemini, OpenAI } from "@lobehub/icons";
 
-import type { ProviderType } from "@/lib/checks";
+import type { ProviderType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const ICON_MAP: Record<ProviderType, React.ComponentType<{ className?: string; size?: number }>> = {
