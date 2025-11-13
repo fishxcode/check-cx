@@ -86,7 +86,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
         </div>
       </div>
       <div className="flex items-center justify-between text-[10px] font-medium text-muted-foreground">
-        <span>+60 min</span>
+        <span>最早</span>
         {nextRefreshLabel ? (
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary/80">
             下次刷新 {nextRefreshLabel}
@@ -94,7 +94,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
         ) : (
           <span className="text-muted-foreground/70">手动刷新</span>
         )}
-        <span>最新</span>
+        <span>最近</span>
       </div>
     </div>
   );

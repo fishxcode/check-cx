@@ -8,25 +8,20 @@ import type { CheckResult, HistorySnapshot } from "../types";
 import { logError } from "../utils";
 
 /**
- * 历史记录时间窗口 (1小时)
- */
-const HISTORY_WINDOW_MS = 60 * 60 * 1000;
-
-/**
  * 每个 Provider 最多保留的历史记录数
  */
 const MAX_POINTS_PER_PROVIDER = 60;
 
 /**
  * 从数据库加载历史记录
+ * 语义：按 Provider 加载“最新的最多 60 条记录”，不再按固定时间窗口截断
  * @returns 按 config_id 分组的历史记录
  */
 export async function loadHistory(): Promise<HistorySnapshot> {
   try {
     const supabase = await createClient();
-    const cutoff = new Date(Date.now() - HISTORY_WINDOW_MS).toISOString();
 
-    // 从数据库查询最近 1 小时内的记录,使用 JOIN 获取配置信息
+    // 从数据库查询最新的记录,使用 JOIN 获取配置信息
     const { data, error } = await supabase
       .from("check_history")
       .select(
@@ -41,7 +36,6 @@ export async function loadHistory(): Promise<HistorySnapshot> {
         )
       `
       )
-      .gte("checked_at", cutoff)
       .order("checked_at", { ascending: false })
       .limit(MAX_POINTS_PER_PROVIDER * 10); // 预留足够的数据
 

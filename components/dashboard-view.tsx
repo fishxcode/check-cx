@@ -215,7 +215,7 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-                        近 1 小时
+                        最近 60 次检测
                       </p>
                       <p className="mt-1 text-foreground">{items.length} 次检测</p>
                     </div>
