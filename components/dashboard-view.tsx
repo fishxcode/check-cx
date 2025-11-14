@@ -39,6 +39,9 @@ const computeRemainingMs = (
   return Math.max(0, remaining);
 };
 
+const formatLatency = (value: number | null | undefined) =>
+  typeof value === "number" ? `${value} ms` : "—";
+
 export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -198,7 +201,7 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                     </Badge>
                   </div>
 
-                  <div className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-3">
+                  <div className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-4">
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
                         最近检查
@@ -207,10 +210,18 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-                        延迟
+                        对话首字
                       </p>
                       <p className="mt-1 text-foreground">
-                        {latest.latencyMs ? `${latest.latencyMs} ms` : "—"}
+                        {formatLatency(latest.latencyMs)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+                        端点 Ping
+                      </p>
+                      <p className="mt-1 text-foreground">
+                        {formatLatency(latest.pingLatencyMs)}
                       </p>
                     </div>
                     <div>

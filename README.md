@@ -1,14 +1,27 @@
 ## Check CX
 
-Check CX 是一套基于 Next.js + shadcn/ui 的 AI 对话健康面板，用于持续监控 OpenAI、Gemini、Anthropic 等模型的 API 可用性、延迟与错误信息，可直接部署为落地页或团队内部状态墙。
+Check CX 是一套基于 Next.js 16 + shadcn/ui 的 AI 对话健康监控面板，用于持续跟踪 OpenAI、Gemini、Anthropic 等模型的 API 可用性、延迟与错误信息，可部署为落地页或团队内部状态墙。
 
 ### 功能亮点
 
-- 🎯 **多目标配置**:通过数据库管理端点、密钥、类型与模型,支持任意数量的检测组
-- ⏱️ **分钟级采样**:Node 侧常驻轮询器按配置频率触发对话请求,并将 1 小时内的状态写入 Supabase
-- ⚙️ **可调频率**:`CHECK_POLL_INTERVAL_SECONDS` 支持 15~600 秒自定义检测周期(默认 60 秒)
-- 📈 **时间轴视图**:每个配置都会渲染独立时间轴,可快速对比 60 次内的成功/失败/延迟
-- 🔒 **安全默认**:密钥仅在服务器侧读取并用于后端请求,不会透传到浏览器
+- 🎯 **多目标配置**：通过 Supabase 中的 `check_configs` 管理端点、模型和密钥，支持任意数量的检测组，改动即时生效。
+- ⏱️ **分钟级采样**：`lib/core/poller.ts` 按 `CHECK_POLL_INTERVAL_SECONDS` 间隔执行检测，写入最新 60 条 Supabase 历史记录并保留 ping 统计。
+- 📡 **端点双探测**：除主模型请求外，还可用 `lib/providers/stream-check.ts` 与 `lib/providers/endpoint-ping.ts` 评估网关级延迟，快速定位问题。
+- 📈 **实时可视化**：`components/dashboard-view.tsx` 以时间轴展示成败与延迟，带轮询倒计时和 status meta，适合在 TV 或大屏循环展示。
+- 🔒 **安全默认**：密钥仅保留在服务器，前端仅接收聚合后的健康数据；提供 `.env.example` 和 SQL 模板避免秘钥泄漏。
+
+## 目录结构
+
+```text
+app/                 Next.js App Router 页面与 API（例如 app/api/dashboard）
+components/          界面组件与 shadcn/ui 包装
+lib/core/            轮询器、Dashboard 数据加载、全局状态
+lib/providers/       OpenAI / Gemini / Anthropic / 自定义检测器
+lib/database/        Supabase 配置与历史读写逻辑
+lib/supabase/        SSR Client、Middleware、RPC 包装
+lib/types/, utils/   共享类型与工具方法（cn、error handler 等）
+supabase/migrations/ SQL 迁移，保持云端 schema 一致
+```
 
 ## 快速开始
 
@@ -24,31 +37,39 @@ Check CX 是一套基于 Next.js + shadcn/ui 的 AI 对话健康面板，用于�
    cp .env.example .env.local
    ```
 
-3. 启动本地开发
+3. 在 Supabase 中应用 `supabase/migrations/` 内的 SQL，并通过 SQL Editor 插入至少一个 `check_configs` 记录。
+4. 启动本地开发
 
    ```bash
    pnpm dev
    ```
 
-4. 访问 [http://localhost:3000](http://localhost:3000) 查看状态面板。
+5. 访问 [http://localhost:3000](http://localhost:3000) 查看状态面板。
 
-## 数据采集与存储
+### 常用命令
 
-- 所有检测均由服务器发起：`lib/poller.ts` 会在进程启动后立即检测一次，并按 `CHECK_POLL_INTERVAL_SECONDS` 间隔持续轮询（默认 60 秒，可自定义）。
-- 历史记录由 `lib/history-store.ts` 负责写入 Supabase 的 `check_history` 表，并只查询最近 1 小时内的数据用于渲染时间轴。
-- 每个提供商最多保留 60 条记录，写入时会自动清理更旧的条目，因此历史数据始终维持在 60 份以内。
+- `pnpm dev`：启动带自动刷新与后台轮询器的开发服务器。
+- `pnpm build` / `pnpm start`：构建并以生产模式验证部署包。
+- `pnpm lint`：使用 Next.js Core Web Vitals 规则运行 ESLint，提交前务必通过。
+
+## 数据采集与渲染流程
+
+1. `lib/core/poller.ts` 在应用冷启动时即刻运行一次，并依据 `CHECK_POLL_INTERVAL_SECONDS` 的毫秒值设置 `setInterval`。
+2. 每轮会用 `lib/database/config-loader.ts` 读取启用的配置，再调用 `lib/providers` 下的具体实现执行检测。支持多 providers 并行、reasoning effort 自动设置与 endpoint ping 采集。
+3. 结果写入 `check_history` 表由 `lib/database/history.ts` 完成，超出 60 条的旧记录会被自动清理。
+4. `lib/core/dashboard-data.ts` 汇总历史快照与轮询信息后，由 `app/api/dashboard/route.ts` 输出 JSON，`components/dashboard-view.tsx` 则以时间轴 + Summary 卡片渲染。
 
 ## 环境变量配置
 
-在 `.env` 中配置 Supabase 连接参数和轮询间隔:
+在 `.env` 中配置 Supabase 连接参数和轮询间隔：
 
 | 变量名 | 说明 |
-| ------------------------------ | ----------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 项目 URL,负责读取/写入历史记录 |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` | Supabase publishable/anon key,用于访问数据库 |
-| `CHECK_POLL_INTERVAL_SECONDS` | (可选) 全局检测间隔(单位秒,默认 60,支持 15~600) |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 项目 URL，负责读取/写入历史记录 |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` | Supabase publishable/anon key，用于访问数据库 |
+| `CHECK_POLL_INTERVAL_SECONDS` | (可选) 全局检测间隔（单位秒，默认 60，支持 15~600） |
 
-示例 `.env`:
+示例：
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
@@ -58,28 +79,30 @@ CHECK_POLL_INTERVAL_SECONDS=60
 
 ## 数据库配置管理
 
-CHECK 配置已从环境变量迁移到 Supabase 数据库的 `check_configs` 表。通过数据库管理配置可以动态启用/禁用检测,无需重启应用。
+CHECK 配置已经迁移到 Supabase 的 `check_configs` 表，通过 SQL 即可热更新检测目标，无需重启服务。
 
 ### 配置表结构
 
-`check_configs` 表包含以下字段:
-
 | 字段 | 类型 | 说明 |
-| ---------- | ------- | -------------------------------------------- |
-| `id` | UUID | 配置 UUID,自动生成的唯一标识符 |
-| `name` | TEXT | 显示名称(如"主力 OpenAI") |
-| `type` | TEXT | 提供商类型:`openai` / `gemini` / `anthropic` |
-| `model` | TEXT | 模型名称(如 `gpt-4o-mini`) |
-| `endpoint` | TEXT | API 端点 URL |
-| `api_key` | TEXT | API 密钥 |
+| --- | --- | --- |
+| `id` | UUID | 配置 UUID，自动生成 |
+| `name` | TEXT | 展示名称（如“主力 OpenAI”） |
+| `type` | TEXT | `openai` / `gemini` / `anthropic` / 自定义 |
+| `model` | TEXT | 模型名称，可附加 effort 指令 |
+| `endpoint` | TEXT | API Endpoint |
+| `api_key` | TEXT | API 密钥（仅服务器使用） |
 | `enabled` | BOOLEAN | 是否启用该配置 |
+
+### 推理模型 Effort 指令
+
+- 对于部分 OpenAI 兼容网关（如 PackyAPI），`gpt-5.1-codex`、`o1/o3` 等推理模型在调用时需要显式 `reasoning_effort`。
+- 可在 `model` 后追加 `@minimal` / `@low` / `@medium` / `@high`（或 `#` 符号），例如 `gpt-5.1-codex@high`。
+- 未指定时，Check CX 会在检测到常见推理模型（`codex`、`gpt-5.x`、`o1`~`o9`、`deepseek-r1`、`qwq` 等）时默认使用 `medium`，避免三方 API 返回 400。
 
 ### 添加配置
 
-在 Supabase SQL Editor 中执行以下命令添加新配置:
-
 ```sql
--- OpenAI 配置 (id 会自动生成 UUID)
+-- OpenAI
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
   '主力 OpenAI',
@@ -90,7 +113,7 @@ VALUES (
   true
 );
 
--- Gemini 配置
+-- Gemini
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
   'Gemini 备份',
@@ -101,7 +124,7 @@ VALUES (
   true
 );
 
--- Anthropic Claude 配置
+-- Anthropic
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
   'Claude 回退',
@@ -117,19 +140,23 @@ VALUES (
 
 ```sql
 -- 查看所有配置
-SELECT id, name, type, model, enabled FROM check_configs;
+SELECT id, name, type, model, endpoint, enabled FROM check_configs;
 
--- 禁用某个配置 (使用 UUID)
+-- 按 UUID 禁用
 UPDATE check_configs SET enabled = false WHERE id = 'your-uuid-here';
 
--- 启用某个配置 (使用名称更方便)
+-- 按名称启用
 UPDATE check_configs SET enabled = true WHERE name = '主力 OpenAI';
 
--- 更新配置
+-- 更新模型或端点
 UPDATE check_configs
 SET model = 'gpt-4o', endpoint = 'https://new-endpoint.com/v1/chat/completions'
 WHERE name = '主力 OpenAI';
 
--- 删除配置 (使用名称)
+-- 删除配置
 DELETE FROM check_configs WHERE name = '旧配置';
 ```
+
+## 贡献指南
+
+贡献者可参考 `AGENTS.md` 获取结构说明、开发流程、编码规范与提交流程。提交前请至少运行一次 `pnpm lint` 与本 README 中的 Supabase 配置校验步骤，确保面板能够拉取到真实检测数据。

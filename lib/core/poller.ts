@@ -56,6 +56,10 @@ async function tick() {
     results.forEach((result) => {
       const latency =
         typeof result.latencyMs === "number" ? `${result.latencyMs}ms` : "N/A";
+      const pingLatency =
+        typeof result.pingLatencyMs === "number"
+          ? `${result.pingLatencyMs}ms`
+          : "N/A";
       const sanitizedMessage = (result.message || "")
         .replace(/\s+/g, " ")
         .trim()
@@ -63,7 +67,9 @@ async function tick() {
       console.log(
         `[check-cx]   · ${result.name}(${result.type}/${result.model}) -> ${
           result.status
-        } | latency=${latency} | endpoint=${result.endpoint} | message=${
+        } | latency=${latency} | ping=${pingLatency} | endpoint=${
+          result.endpoint
+        } | message=${
           sanitizedMessage || "无"
         }`
       );

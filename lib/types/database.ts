@@ -25,6 +25,7 @@ export interface CheckHistoryRow {
   config_id: string;
   status: string;
   latency_ms: number | null;
+  ping_latency_ms: number | null;
   checked_at: string;
   message: string | null;
 }

@@ -61,6 +61,7 @@ export async function loadHistory(): Promise<HistorySnapshot> {
         model: config.model,
         status: record.status as "operational" | "degraded" | "failed",
         latencyMs: record.latency_ms,
+        pingLatencyMs: record.ping_latency_ms ?? null,
         checkedAt: record.checked_at,
         message: record.message || "",
       };
@@ -112,6 +113,7 @@ export async function appendHistory(
       config_id: result.id,
       status: result.status,
       latency_ms: result.latencyMs,
+      ping_latency_ms: result.pingLatencyMs,
       checked_at: result.checkedAt,
       message: result.message,
     }));

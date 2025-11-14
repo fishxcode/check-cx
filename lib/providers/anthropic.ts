@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import type { CheckResult, HealthStatus, ProviderConfig } from "../types";
 import { DEFAULT_ENDPOINTS } from "../types";
+import { measureEndpointPing } from "./endpoint-ping";
 
 /**
  * 默认超时时间 (毫秒)
@@ -105,6 +106,7 @@ export async function checkAnthropic(
   const startedAt = Date.now();
 
   const displayEndpoint = config.endpoint || DEFAULT_ENDPOINTS.anthropic;
+  const pingPromise = measureEndpointPing(displayEndpoint);
 
   try {
     const client = getAnthropicClient(config);
@@ -144,6 +146,7 @@ export async function checkAnthropic(
         ? `响应成功但耗时 ${latencyMs}ms`
         : `流式响应正常 (${latencyMs}ms)`;
 
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -152,6 +155,7 @@ export async function checkAnthropic(
       model: config.model,
       status,
       latencyMs,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };
@@ -160,6 +164,7 @@ export async function checkAnthropic(
     const message =
       err?.name === "AbortError" ? "请求超时" : err?.message || "未知错误";
 
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -168,6 +173,7 @@ export async function checkAnthropic(
       model: config.model,
       status: "failed",
       latencyMs: null,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };

@@ -19,7 +19,8 @@ export interface CheckResult {
   endpoint: string;
   model: string;
   status: HealthStatus;
-  latencyMs: number | null;
+  latencyMs: number | null; // 对话首字延迟
+  pingLatencyMs: number | null; // 端点 Ping 延迟
   checkedAt: string; // ISO 8601 timestamp
   message: string;
 }

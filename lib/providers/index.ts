@@ -50,6 +50,7 @@ export async function runProviderChecks(
           model: config.model,
           status: "failed" as const,
           latencyMs: null,
+          pingLatencyMs: null,
           checkedAt: new Date().toISOString(),
           message: getErrorMessage(error),
         };

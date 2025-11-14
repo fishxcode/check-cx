@@ -3,7 +3,9 @@
  */
 
 import type { CheckResult, HealthStatus, ProviderConfig } from "../types";
+import { DEFAULT_ENDPOINTS } from "../types";
 import { extractMessage } from "../utils";
+import { measureEndpointPing } from "./endpoint-ping";
 
 /**
  * 默认超时时间 (毫秒)
@@ -42,6 +44,9 @@ export async function runStreamCheck(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const startedAt = Date.now();
+  const displayEndpoint =
+    params.displayEndpoint || config.endpoint || DEFAULT_ENDPOINTS[config.type];
+  const pingPromise = measureEndpointPing(displayEndpoint);
 
   try {
     const response = await fetch(params.url, {
@@ -55,6 +60,7 @@ export async function runStreamCheck(
       const errorBody = await response.text();
       const message = extractMessage(errorBody) || `HTTP ${response.status}`;
 
+      const pingLatencyMs = await pingPromise;
       return {
         id: config.id,
         name: config.name,
@@ -63,6 +69,7 @@ export async function runStreamCheck(
         model: config.model,
         status: "failed",
         latencyMs,
+        pingLatencyMs,
         checkedAt: new Date().toISOString(),
         message,
       };
@@ -86,6 +93,7 @@ export async function runStreamCheck(
         ? `响应成功但耗时 ${latencyMs}ms`
         : `流式响应正常 (${latencyMs}ms)`;
 
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -94,6 +102,7 @@ export async function runStreamCheck(
       model: config.model,
       status,
       latencyMs,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };
@@ -101,6 +110,7 @@ export async function runStreamCheck(
     const err = error as Error & { name?: string };
     const message =
       err?.name === "AbortError" ? "请求超时" : err?.message || "未知错误";
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -109,6 +119,7 @@ export async function runStreamCheck(
       model: config.model,
       status: "failed",
       latencyMs: null,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };

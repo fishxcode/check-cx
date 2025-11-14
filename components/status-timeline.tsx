@@ -21,6 +21,9 @@ const formatRemainingTime = (ms: number) => {
   return `${seconds}秒`;
 };
 
+const formatLatency = (value: number | null | undefined) =>
+  typeof value === "number" ? `${value} ms` : "—";
+
 export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) {
   if (items.length === 0) {
     return (
@@ -57,7 +60,9 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                   )}
                   aria-label={
                     segment
-                      ? `${segment.formattedTime} · ${preset?.label ?? ""}`
+                      ? `${segment.formattedTime} · ${preset?.label ?? ""} · 对话 ${formatLatency(
+                          segment.latencyMs
+                        )} · Ping ${formatLatency(segment.pingLatencyMs)}`
                       : "未采样"
                   }
                 >
@@ -71,9 +76,10 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                         {PROVIDER_LABEL[segment.type]}
                         <span className="font-mono text-foreground">{segment.model}</span>
                       </p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        延迟 {segment.latencyMs ? `${segment.latencyMs} ms` : "—"}
-                      </p>
+                      <div className="mt-1 flex flex-col gap-1 text-[11px] text-muted-foreground">
+                        <span>对话首字 {formatLatency(segment.latencyMs)}</span>
+                        <span>端点 Ping {formatLatency(segment.pingLatencyMs)}</span>
+                      </div>
                       <p className="mt-1 line-clamp-3 text-[11px] text-foreground">
                         {segment.message}
                       </p>

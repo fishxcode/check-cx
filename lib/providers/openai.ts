@@ -3,9 +3,11 @@
  */
 
 import OpenAI from "openai";
+import type { ChatCompletionCreateParamsStreaming } from "openai/resources/chat/completions";
 
 import type { CheckResult, HealthStatus, ProviderConfig } from "../types";
 import { DEFAULT_ENDPOINTS } from "../types";
+import { measureEndpointPing } from "./endpoint-ping";
 
 /**
  * 默认超时时间 (毫秒)
@@ -35,6 +37,60 @@ declare global {
 const openAIClientCache: Map<string, OpenAI> =
   globalThis.__CHECK_CX_OPENAI_CLIENTS__ ??
   (globalThis.__CHECK_CX_OPENAI_CLIENTS__ = new Map<string, OpenAI>());
+
+type ReasoningEffortValue = NonNullable<
+  ChatCompletionCreateParamsStreaming["reasoning_effort"]
+>;
+
+const EFFORT_ALIAS_MAP: Record<string, ReasoningEffortValue> = {
+  mini: "minimal",
+  minimal: "minimal",
+  low: "low",
+  medium: "medium",
+  high: "high",
+};
+
+// 部分 OpenAI 兼容网关（例如 PackyAPI）要求显式传递 reasoning_effort，
+// 因此在未指定指令时为常见的推理模型提供一个安全的默认值。
+const REASONING_MODEL_HINTS = [
+  /codex/i,
+  /\bgpt-5/i,
+  /\bo[1-9]/i,
+  /deepseek-r1/i,
+  /qwq/i,
+];
+
+function resolveModelPreferences(model: string): {
+  requestModel: string;
+  reasoningEffort?: ReasoningEffortValue;
+} {
+  const trimmed = model.trim();
+  if (!trimmed) {
+    return { requestModel: model };
+  }
+
+  const directiveMatch = trimmed.match(
+    /^(.*?)[@#](mini|minimal|low|medium|high)$/i
+  );
+  if (directiveMatch) {
+    const [, base, effortRaw] = directiveMatch;
+    const normalizedBase = base.trim() || trimmed;
+    const normalizedEffort =
+      EFFORT_ALIAS_MAP[
+        effortRaw.toLowerCase() as keyof typeof EFFORT_ALIAS_MAP
+      ];
+    return {
+      requestModel: normalizedBase,
+      reasoningEffort: normalizedEffort,
+    };
+  }
+
+  if (REASONING_MODEL_HINTS.some((regex) => regex.test(trimmed))) {
+    return { requestModel: trimmed, reasoningEffort: "medium" };
+  }
+
+  return { requestModel: trimmed };
+}
 
 /**
  * 从配置的 endpoint 推导 openai SDK 的 baseURL
@@ -105,21 +161,30 @@ export async function checkOpenAI(
   const startedAt = Date.now();
 
   const displayEndpoint = config.endpoint || DEFAULT_ENDPOINTS.openai;
+  const pingPromise = measureEndpointPing(displayEndpoint);
+  const { requestModel, reasoningEffort } = resolveModelPreferences(
+    config.model
+  );
 
   try {
     const client = getOpenAIClient(config);
 
     // 使用 Chat Completions 流式接口进行最小请求
-    const stream = await client.chat.completions.create(
-      {
-        model: config.model,
-        messages: [{ role: "user", content: "hi" }],
-        max_tokens: 1,
-        temperature: 0,
-        stream: true,
-      },
-      { signal: controller.signal }
-    );
+    const requestPayload: ChatCompletionCreateParamsStreaming = {
+      model: requestModel,
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1,
+      temperature: 0,
+      stream: true,
+    };
+
+    if (reasoningEffort) {
+      requestPayload.reasoning_effort = reasoningEffort;
+    }
+
+    const stream = await client.chat.completions.create(requestPayload, {
+      signal: controller.signal,
+    });
 
     // 读取完整的流式响应（内容本身不重要，只要能成功流式返回即可）
     for await (const chunk of stream) {
@@ -137,6 +202,7 @@ export async function checkOpenAI(
         ? `响应成功但耗时 ${latencyMs}ms`
         : `流式响应正常 (${latencyMs}ms)`;
 
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -145,6 +211,7 @@ export async function checkOpenAI(
       model: config.model,
       status,
       latencyMs,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };
@@ -153,6 +220,7 @@ export async function checkOpenAI(
     const message =
       err?.name === "AbortError" ? "请求超时" : err?.message || "未知错误";
 
+    const pingLatencyMs = await pingPromise;
     return {
       id: config.id,
       name: config.name,
@@ -161,6 +229,7 @@ export async function checkOpenAI(
       model: config.model,
       status: "failed",
       latencyMs: null,
+      pingLatencyMs,
       checkedAt: new Date().toISOString(),
       message,
     };
