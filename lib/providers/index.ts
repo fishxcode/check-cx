@@ -8,6 +8,9 @@ import { checkOpenAI } from "./openai";
 import { checkGemini } from "./gemini";
 import { checkAnthropic } from "./anthropic";
 
+const MAX_REQUEST_ABORT_RETRIES = 1;
+const REQUEST_ABORTED_PATTERN = /request was aborted\.?/i;
+
 /**
  * 检查单个 Provider
  */
@@ -24,6 +27,64 @@ async function checkProvider(config: ProviderConfig): Promise<CheckResult> {
   }
 }
 
+function shouldRetryRequestAborted(message: string | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+  return REQUEST_ABORTED_PATTERN.test(message);
+}
+
+async function checkWithRetry(config: ProviderConfig): Promise<CheckResult> {
+  for (let attempt = 0; attempt <= MAX_REQUEST_ABORT_RETRIES; attempt += 1) {
+    try {
+      const result = await checkProvider(config);
+      if (
+        result.status === "failed" &&
+        shouldRetryRequestAborted(result.message) &&
+        attempt < MAX_REQUEST_ABORT_RETRIES
+      ) {
+        console.warn(
+          `[check-cx] ${config.name} 请求异常（Request was aborted），正在重试第 ${
+            attempt + 2
+          } 次`
+        );
+        continue;
+      }
+      return result;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      if (
+        shouldRetryRequestAborted(message) &&
+        attempt < MAX_REQUEST_ABORT_RETRIES
+      ) {
+        console.warn(
+          `[check-cx] ${config.name} 请求异常（Request was aborted），正在重试第 ${
+            attempt + 2
+          } 次`
+        );
+        continue;
+      }
+
+      logError(`检查 ${config.name} (${config.type}) 失败`, error);
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        endpoint: config.endpoint,
+        model: config.model,
+        status: "failed",
+        latencyMs: null,
+        pingLatencyMs: null,
+        checkedAt: new Date().toISOString(),
+        message,
+      };
+    }
+  }
+
+  // 理论上不会触发，这里仅为类型系统兜底
+  throw new Error("Unexpected retry loop exit");
+}
+
 /**
  * 批量执行 Provider 健康检查
  * @param configs Provider 配置列表
@@ -37,25 +98,7 @@ export async function runProviderChecks(
   }
 
   const results = await Promise.all(
-    configs.map(async (config) => {
-      try {
-        return await checkProvider(config);
-      } catch (error) {
-        logError(`检查 ${config.name} (${config.type}) 失败`, error);
-        return {
-          id: config.id,
-          name: config.name,
-          type: config.type,
-          endpoint: config.endpoint,
-          model: config.model,
-          status: "failed" as const,
-          latencyMs: null,
-          pingLatencyMs: null,
-          checkedAt: new Date().toISOString(),
-          message: getErrorMessage(error),
-        };
-      }
-    })
+    configs.map((config) => checkWithRetry(config))
   );
 
   return results.sort((a, b) => a.name.localeCompare(b.name));
