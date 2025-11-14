@@ -3,7 +3,7 @@
 import { ProviderIcon } from "@/components/provider-icon";
 import type { TimelineItem } from "@/lib/types";
 import { PROVIDER_LABEL, STATUS_META } from "@/lib/core/status";
-import { cn } from "@/lib/utils";
+import { cn, formatLocalTime } from "@/lib/utils";
 
 interface StatusTimelineProps {
   items: TimelineItem[];
@@ -47,6 +47,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
           <div className="flex h-full w-full flex-row-reverse gap-px">
             {segments.map((segment, index) => {
               const preset = segment ? STATUS_META[segment.status] : undefined;
+              const formattedTime = segment ? formatLocalTime(segment.checkedAt) : "";
               return (
                 <div
                   key={
@@ -60,7 +61,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                   )}
                   aria-label={
                     segment
-                      ? `${segment.formattedTime} · ${preset?.label ?? ""} · 对话 ${formatLatency(
+                      ? `${formattedTime} · ${preset?.label ?? ""} · 对话 ${formatLatency(
                           segment.latencyMs
                         )} · Ping ${formatLatency(segment.pingLatencyMs)}`
                       : "未采样"
@@ -69,7 +70,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                   {segment && (
                     <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden w-60 -translate-x-1/2 flex-col rounded-xl border border-border/80 bg-popover/95 p-3 text-[11px] text-foreground shadow-lg shadow-black/30 backdrop-blur group-hover:flex">
                       <p className="font-semibold text-xs">
-                        {preset?.label} · {segment.formattedTime}
+                        {preset?.label} · {formattedTime}
                       </p>
                       <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                         <ProviderIcon type={segment.type} size={14} />

@@ -15,24 +15,6 @@ import type {
 } from "../types";
 
 /**
- * 时间格式化器
- */
-const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  hour12: false,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-});
-
-/**
- * 格式化 ISO 时间字符串
- */
-const formatTime = (iso: string) => timeFormatter.format(new Date(iso));
-
-/**
  * 加载 Dashboard 数据
  * @param options 选项
  * @returns Dashboard 数据
@@ -110,15 +92,9 @@ export async function loadDashboardData(options?: {
 
   const mappedTimelines = Object.entries(history).map<ProviderTimeline | null>(
     ([id, items]) => {
-      const sorted = [...items]
-        .sort(
-          (a, b) =>
-            new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime()
-        )
-        .map((item) => ({
-          ...item,
-          formattedTime: formatTime(item.checkedAt),
-        }));
+      const sorted = [...items].sort(
+        (a, b) => new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime()
+      );
 
       if (sorted.length === 0) {
         return null;
@@ -143,9 +119,7 @@ export async function loadDashboardData(options?: {
         new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime()
     );
 
-  const lastUpdated = allEntries.length
-    ? formatTime(allEntries[0].checkedAt)
-    : null;
+  const lastUpdated = allEntries.length ? allEntries[0].checkedAt : null;
 
   return {
     providerTimelines,

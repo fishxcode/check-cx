@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import type { DashboardData } from "@/lib/types";
 import { PROVIDER_LABEL, STATUS_META } from "@/lib/core/status";
+import { formatLocalTime } from "@/lib/utils";
 
 interface DashboardViewProps {
   initialData: DashboardData;
@@ -110,6 +111,10 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   }, [data.pollIntervalMs, latestCheckTimestamp]);
 
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
+  const lastUpdatedLabel = useMemo(
+    () => (lastUpdated ? formatLocalTime(lastUpdated) : null),
+    [lastUpdated]
+  );
 
   return (
     <>
@@ -125,9 +130,9 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             AI 对话健康面板
           </h1>
-          {lastUpdated ? (
+          {lastUpdatedLabel ? (
             <p className="text-sm text-muted-foreground">
-              最近更新：{lastUpdated} · 数据每 {pollIntervalLabel} 自动刷新{" "}
+              最近更新：{lastUpdatedLabel} · 数据每 {pollIntervalLabel} 自动刷新{" "}
               {isRefreshing && <span className="text-primary">（同步中…）</span>}
             </p>
           ) : (
@@ -144,33 +149,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             <CardTitle className="flex items-center gap-2 text-lg">
               尚未配置任何检查目标
             </CardTitle>
-            <CardDescription>
-              在项目根目录的 <code>.env</code> 中配置 CHECK_GROUPS 以及每组的
-              TYPE/KEY/MODEL/ENDPOINT，随后刷新此页面即可看到实时状态。
-            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <pre className="rounded-lg border bg-muted/80 p-4 text-xs text-muted-foreground">
-CHECK_GROUPS=main,backup,gemini,claude
-CHECK_MAIN_NAME=主力 OpenAI
-CHECK_MAIN_TYPE=openai
-CHECK_MAIN_KEY=sk-xxxx
-CHECK_MAIN_MODEL=gpt-4o-mini
-CHECK_MAIN_ENDPOINT=https://api.openai.com/v1/chat/completions
-
-CHECK_BACKUP_NAME=备用 OpenAI
-CHECK_BACKUP_TYPE=openai
-CHECK_BACKUP_KEY=sk-xxxx
-CHECK_BACKUP_MODEL=gpt-4o-mini
-CHECK_BACKUP_ENDPOINT=https://api.openai.com/v1/chat/completions
-
-CHECK_GEMINI_NAME=Gemini 备份
-CHECK_GEMINI_TYPE=gemini
-CHECK_GEMINI_KEY=xxx
-CHECK_GEMINI_MODEL=gemini-1.5-flash
-CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
-            </pre>
-          </CardContent>
         </Card>
       ) : (
         <section className="grid gap-6 grid-cols-1 lg:grid-cols-2">
@@ -206,7 +185,9 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
                         最近检查
                       </p>
-                      <p className="mt-1 text-foreground">{latest.formattedTime}</p>
+                      <p className="mt-1 text-foreground">
+                        {formatLocalTime(latest.checkedAt)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
@@ -226,7 +207,7 @@ CHECK_GEMINI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-                        最近 60 次检测
+                        检测次数
                       </p>
                       <p className="mt-1 text-foreground">{items.length} 次检测</p>
                     </div>

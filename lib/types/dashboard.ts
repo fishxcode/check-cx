@@ -5,11 +5,9 @@
 import type { CheckResult } from "./check";
 
 /**
- * 带格式化时间的时间线项目
+ * 时间线项目（保持原始 ISO 时间，交给客户端格式化）
  */
-export interface TimelineItem extends CheckResult {
-  formattedTime: string;
-}
+export type TimelineItem = CheckResult;
 
 /**
  * Provider 的时间线数据
