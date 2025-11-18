@@ -1,7 +1,11 @@
 /**
  * Dashboard 数据聚合模块
+ *
+ * 职责：
+ * - 从 Supabase 读取最近的检查历史（按 Provider 聚合）
+ * - 在必要时触发一次新的 Provider 检测并写入历史
+ * - 结合轮询配置与官方状态，生成 DashboardView 所需的完整数据结构
  */
-
 import { loadProviderConfigsFromDB } from "../database/config-loader";
 import { runProviderChecks } from "../providers";
 import { appendHistory, loadHistory } from "../database/history";
@@ -17,8 +21,11 @@ import type {
 
 /**
  * 加载 Dashboard 数据
- * @param options 选项
- * @returns Dashboard 数据
+ *
+ * @param options.refreshMode
+ *  - "always"  ：每次请求都触发一次新的检测
+ *  - "missing"：仅在历史为空时触发检测（避免首屏空白）
+ *  - "never"  ：只读取历史，不触发新的检测
  */
 export async function loadDashboardData(options?: {
   refreshMode?: RefreshMode;

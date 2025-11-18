@@ -157,6 +157,12 @@ WHERE name = '主力 OpenAI';
 DELETE FROM check_configs WHERE name = '旧配置';
 ```
 
+## 文档索引
+
+- `docs/ARCHITECTURE.md`：系统架构与模块边界说明，适合新成员快速理解整体设计。
+- `docs/OPERATIONS.md`：运维与排障手册，涵盖部署、监控、常见故障排查流程。
+- `docs/EXTENDING_PROVIDERS.md`：扩展新的 Provider 与官方状态检查的开发指南。
+
 ## 贡献指南
 
 贡献者可参考 `AGENTS.md` 获取结构说明、开发流程、编码规范与提交流程。提交前请至少运行一次 `pnpm lint` 与本 README 中的 Supabase 配置校验步骤，确保面板能够拉取到真实检测数据。

@@ -11,9 +11,11 @@ import { PROVIDER_LABEL, STATUS_META, OFFICIAL_STATUS_META } from "@/lib/core/st
 import { formatLocalTime } from "@/lib/utils";
 
 interface DashboardViewProps {
+  /** 首屏由服务端注入的聚合数据，用作前端轮询的初始快照 */
   initialData: DashboardData;
 }
 
+/** 计算所有 Provider 中最近一次检查的时间戳（毫秒） */
 const getLatestCheckTimestamp = (
   timelines: DashboardData["providerTimelines"]
 ) => {
@@ -38,6 +40,11 @@ const computeRemainingMs = (
 const formatLatency = (value: number | null | undefined) =>
   typeof value === "number" ? `${value} ms` : "—";
 
+/**
+ * Dashboard 主视图
+ * - 负责渲染整体头部统计与 Provider 卡片
+ * - 在浏览器端按 pollIntervalMs 定时拉取 /api/dashboard 并维护倒计时
+ */
 export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -141,7 +148,9 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              尚未找到任何检测配置，请先在 .env 中定义 CHECK_GROUPS。
+              尚未找到任何检测配置，请在 Supabase 的{" "}
+              <span className="font-mono">check_configs</span> 表中添加至少一条{" "}
+              <code>enabled = true</code> 的配置。
             </p>
           )}
         </div>

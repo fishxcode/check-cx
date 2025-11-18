@@ -41,10 +41,6 @@ export async function loadProviderConfigsFromDB(): Promise<ProviderConfig[]> {
       })
     );
 
-    console.log(
-      `[check-cx] 成功加载 ${configs.length} 个配置:`,
-      configs.map((c) => c.id).join(", ")
-    );
     return configs;
   } catch (error) {
     logError("加载配置时发生异常", error);

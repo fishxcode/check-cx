@@ -6,10 +6,13 @@ import { PROVIDER_LABEL, STATUS_META } from "@/lib/core/status";
 import { cn, formatLocalTime } from "@/lib/utils";
 
 interface StatusTimelineProps {
+  /** 时间线条目列表，通常为最近 60 条按时间倒序的检测结果 */
   items: TimelineItem[];
+  /** 距离下一次轮询刷新的剩余毫秒数，用于展示倒计时徽标 */
   nextRefreshInMs?: number | null;
 }
 
+/** 时间线最多绘制的片段数量，对应每个 Provider 保留的历史点数上限 */
 const SEGMENT_LIMIT = 60;
 const formatRemainingTime = (ms: number) => {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -24,11 +27,16 @@ const formatRemainingTime = (ms: number) => {
 const formatLatency = (value: number | null | undefined) =>
   typeof value === "number" ? `${value} ms` : "—";
 
+/**
+ * 单个 Provider 的状态时间线
+ * 使用固定长度的分段条展示最近若干次检测的成功/降级/失败情况
+ */
 export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) {
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
-        暂无检测记录。请在 <code>.env</code> 中添加 CHECK_GROUPS 并刷新页面。
+        暂无检测记录。请在 Supabase 的 <code>check_configs</code> 表中添加启用的配置，
+        然后等待轮询器写入首批历史数据。
       </div>
     );
   }
