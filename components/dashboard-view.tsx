@@ -112,6 +112,14 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     [lastUpdated]
   );
 
+  // 根据卡片数量决定宽屏列数
+  const gridColsClass = useMemo(() => {
+    if (total > 4) {
+      return "grid-cols-1 lg:grid-cols-2 xl:grid-cols-3";
+    }
+    return "grid-cols-1 lg:grid-cols-2";
+  }, [total]);
+
   return (
     <>
       <header className="rounded-3xl border bg-card/70 p-8 shadow-sm backdrop-blur-sm">
@@ -148,7 +156,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           </CardHeader>
         </Card>
       ) : (
-        <section className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+        <section className={`grid gap-6 ${gridColsClass}`}>
           {providerTimelines.map(({ id, latest, items }) => {
             const preset = STATUS_META[latest.status];
             return (

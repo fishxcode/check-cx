@@ -11,7 +11,7 @@ export default async function Home() {
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-background via-background to-muted/40 py-10">
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 md:px-8">
+      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 md:px-8">
         <DashboardView initialData={data} />
       </main>
       <div className="pointer-events-none fixed bottom-4 right-4 flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-lg backdrop-blur">
