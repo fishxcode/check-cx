@@ -1,108 +1,195 @@
-## Check CX
+<div align="center">
+  <h1>Check CX</h1>
 
-Check CX 是一套基于 Next.js 16 + shadcn/ui 的 AI 对话健康监控面板，用于持续跟踪 OpenAI、Gemini、Anthropic 等模型的 API 可用性、延迟与错误信息，可部署为落地页或团队内部状态墙。
+  <p>
+    <strong>AI 模型服务健康监控面板</strong>
+  </p>
 
-### 功能亮点
+  <p>
+    实时跟踪 OpenAI、Gemini、Anthropic 等 AI 模型 API 的可用性、延迟与错误信息
+  </p>
 
-- 🎯 **多目标配置**：通过 Supabase 中的 `check_configs` 管理端点、模型和密钥，支持任意数量的检测组，改动即时生效。
-- ⏱️ **分钟级采样**：`lib/core/poller.ts` 按 `CHECK_POLL_INTERVAL_SECONDS` 间隔执行检测，写入最新 60 条 Supabase 历史记录并保留 ping 统计。
-- 📡 **端点双探测**：除主模型请求外，还可用 `lib/providers/stream-check.ts` 与 `lib/providers/endpoint-ping.ts` 评估网关级延迟，快速定位问题。
-- 📈 **实时可视化**：`components/dashboard-view.tsx` 以时间轴展示成败与延迟，带轮询倒计时和 status meta，适合在 TV 或大屏循环展示。
-- 🔒 **安全默认**：密钥仅保留在服务器，前端仅接收聚合后的健康数据；提供 `.env.example` 和 SQL 模板避免秘钥泄漏。
+  <p>
+    <a href="#快速开始">快速开始</a> •
+    <a href="#功能特性">功能特性</a> •
+    <a href="#配置管理">配置管理</a> •
+    <a href="#文档">文档</a>
+  </p>
+  <img src="docs/images/index.png" alt="Check CX Dashboard" width="60%">
+</div>
 
-## 目录结构
+---
 
-```text
-app/                 Next.js App Router 页面与 API（例如 app/api/dashboard）
-components/          界面组件与 shadcn/ui 包装
-lib/core/            轮询器、Dashboard 数据加载、全局状态
-lib/providers/       OpenAI / Gemini / Anthropic / 自定义检测器
-lib/database/        Supabase 配置与历史读写逻辑
-lib/supabase/        SSR Client、Middleware、RPC 包装
-lib/types/, utils/   共享类型与工具方法（cn、error handler 等）
-supabase/migrations/ SQL 迁移，保持云端 schema 一致
-```
+## 简介
+
+Check CX 是一套基于 **Next.js 16** + **shadcn/ui** 构建的现代化 AI 服务健康监控系统。它能够:
+
+- ✅ **持续监控**多个 AI 模型服务的健康状态
+- ⚡ **实时展示**API 响应延迟与可用性趋势
+- 📊 **可视化呈现**历史数据与状态变化
+- 🔐 **安全管理**API 密钥(仅在服务端存储)
+- 🎯 **灵活配置**任意数量的检测目标
+
+**适用场景:**
+- 团队内部状态墙/大屏展示
+- AI 服务商 SLA 监控
+- 多供应商服务质量对比
+- API 故障快速定位
+
+## 功能特性
+
+### 🎯 灵活的配置管理
+
+- 通过 Supabase 数据库管理所有检测配置
+- 支持 OpenAI、Gemini、Anthropic 及自定义端点
+- 配置修改即时生效,无需重启服务
+- 支持批量启用/禁用检测任务
+
+### ⏱️ 可靠的健康检查
+
+- 基于流式 API 的快速检测(接收首个 chunk 即判定成功)
+- 可配置检测间隔(15-600 秒)
+- 并发执行多个检测任务
+- 自动超时控制(默认 15 秒)
+- 智能状态判定:
+  - `operational`: 延迟 ≤ 6s
+  - `degraded`: 延迟 > 6s
+  - `failed`: 请求失败或超时
+
+### 📈 直观的数据展示
+
+- 时间轴展示最近 1 小时的检测历史
+- 实时延迟曲线与状态变化
+- 自动刷新倒计时显示
+- 响应式设计,支持多屏幕尺寸
+- 适合大屏/TV 循环展示
+
+### 🔒 安全性设计
+
+- API 密钥仅存储在服务端
+- 前端只接收聚合后的健康数据
+- 支持环境变量与 `.env.local` 管理
+- 提供完整的 SQL 迁移脚本
 
 ## 快速开始
 
-1. 安装依赖
+### 前置要求
+
+- **Node.js** 18.x 或更高版本
+- **pnpm** 包管理器
+- **Supabase** 账号与项目
+
+### 安装步骤
+
+1. **克隆仓库**
+
+   ```bash
+   git clone https://github.com/your-username/check-cx.git
+   cd check-cx
+   ```
+
+2. **安装依赖**
 
    ```bash
    pnpm install
    ```
 
-2. 复制并修改环境变量
+3. **配置环境变量**
 
    ```bash
    cp .env.example .env.local
    ```
 
-3. 在 Supabase 中应用 `supabase/migrations/` 内的 SQL，并通过 SQL Editor 插入至少一个 `check_configs` 记录。
-4. 启动本地开发
+   编辑 `.env.local` 文件,填入你的 Supabase 配置:
+
+   ```env
+   # Supabase 配置
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=your-anon-key
+
+   # 检测间隔(秒),范围 15-600,默认 60
+   CHECK_POLL_INTERVAL_SECONDS=60
+   ```
+
+4. **初始化数据库**
+
+   在 Supabase SQL Editor 中执行 `supabase/migrations/` 目录下的迁移脚本,创建必要的表结构。
+
+5. **添加检测配置**
+
+   在 Supabase SQL Editor 中插入至少一个检测配置:
+
+   ```sql
+   INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
+   VALUES (
+     'OpenAI GPT-4',
+     'openai',
+     'gpt-4o-mini',
+     'https://api.openai.com/v1/chat/completions',
+     'sk-your-api-key',
+     true
+   );
+   ```
+
+6. **启动开发服务器**
 
    ```bash
    pnpm dev
    ```
 
-5. 访问 [http://localhost:3000](http://localhost:3000) 查看状态面板。
+7. **访问面板**
 
-### 常用命令
+   打开浏览器访问 [http://localhost:3000](http://localhost:3000)
 
-- `pnpm dev`：启动带自动刷新与后台轮询器的开发服务器。
-- `pnpm build` / `pnpm start`：构建并以生产模式验证部署包。
-- `pnpm lint`：使用 Next.js Core Web Vitals 规则运行 ESLint，提交前务必通过。
+### 生产部署
 
-## 数据采集与渲染流程
+```bash
+# 构建生产版本
+pnpm build
 
-1. `lib/core/poller.ts` 在应用冷启动时即刻运行一次，并依据 `CHECK_POLL_INTERVAL_SECONDS` 的毫秒值设置 `setInterval`。
-2. 每轮会用 `lib/database/config-loader.ts` 读取启用的配置，再调用 `lib/providers` 下的具体实现执行检测。支持多 providers 并行、reasoning effort 自动设置与 endpoint ping 采集。
-3. 结果写入 `check_history` 表由 `lib/database/history.ts` 完成，超出 60 条的旧记录会被自动清理。
-4. `lib/core/dashboard-data.ts` 汇总历史快照与轮询信息后，由 `app/api/dashboard/route.ts` 输出 JSON，`components/dashboard-view.tsx` 则以时间轴 + Summary 卡片渲染。
-
-## 环境变量配置
-
-在 `.env` 中配置 Supabase 连接参数和轮询间隔：
-
-| 变量名 | 说明 |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 项目 URL，负责读取/写入历史记录 |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` | Supabase publishable/anon key，用于访问数据库 |
-| `CHECK_POLL_INTERVAL_SECONDS` | (可选) 全局检测间隔（单位秒，默认 60，支持 15~600） |
-
-示例：
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=your-public-or-anon-key
-CHECK_POLL_INTERVAL_SECONDS=60
+# 启动生产服务器
+pnpm start
 ```
 
-## 数据库配置管理
+推荐部署平台:
+- [Vercel](https://vercel.com) (推荐,零配置)
+- [Netlify](https://www.netlify.com)
+- 自建服务器(需要 Node.js 运行时)
 
-CHECK 配置已经迁移到 Supabase 的 `check_configs` 表，通过 SQL 即可热更新检测目标，无需重启服务。
+## 配置管理
 
-### 配置表结构
+### 数据库表结构
+
+Check CX 使用 Supabase 的两张核心表:
+
+**`check_configs` - 检测配置表**
 
 | 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | UUID | 配置 UUID，自动生成 |
-| `name` | TEXT | 展示名称（如“主力 OpenAI”） |
-| `type` | TEXT | `openai` / `gemini` / `anthropic` / 自定义 |
-| `model` | TEXT | 模型名称，可附加 effort 指令 |
-| `endpoint` | TEXT | API Endpoint |
-| `api_key` | TEXT | API 密钥（仅服务器使用） |
-| `enabled` | BOOLEAN | 是否启用该配置 |
+|------|------|------|
+| `id` | UUID | 主键,自动生成 |
+| `name` | TEXT | 配置名称(如 "主力 OpenAI") |
+| `type` | TEXT | Provider 类型: `openai` / `gemini` / `anthropic` |
+| `model` | TEXT | 模型名称(支持 effort 指令) |
+| `endpoint` | TEXT | API 端点 URL |
+| `api_key` | TEXT | API 密钥 |
+| `enabled` | BOOLEAN | 是否启用 |
 
-### 推理模型 Effort 指令
+**`check_history` - 历史记录表**
 
-- 对于部分 OpenAI 兼容网关（如 PackyAPI），`gpt-5.1-codex`、`o1/o3` 等推理模型在调用时需要显式 `reasoning_effort`。
-- 可在 `model` 后追加 `@minimal` / `@low` / `@medium` / `@high`（或 `#` 符号），例如 `gpt-5.1-codex@high`。
-- 未指定时，Check CX 会在检测到常见推理模型（`codex`、`gpt-5.x`、`o1`~`o9`、`deepseek-r1`、`qwq` 等）时默认使用 `medium`，避免三方 API 返回 400。
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUID | 主键,自动生成 |
+| `config_id` | UUID | 关联的配置 ID |
+| `status` | TEXT | 状态: `operational` / `degraded` / `failed` |
+| `latency_ms` | INTEGER | 响应延迟(毫秒) |
+| `checked_at` | TIMESTAMPTZ | 检测时间 |
+| `message` | TEXT | 错误信息(可选) |
 
-### 添加配置
+### 添加检测配置
+
+#### OpenAI / OpenAI 兼容端点
 
 ```sql
--- OpenAI
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
   '主力 OpenAI',
@@ -112,8 +199,11 @@ VALUES (
   'sk-your-openai-key',
   true
 );
+```
 
--- Gemini
+#### Gemini
+
+```sql
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
   'Gemini 备份',
@@ -123,46 +213,244 @@ VALUES (
   'your-gemini-key',
   true
 );
+```
 
--- Anthropic
+#### Anthropic
+
+```sql
 INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
 VALUES (
-  'Claude 回退',
+  'Claude 主力',
   'anthropic',
   'claude-3-5-sonnet-latest',
   'https://api.anthropic.com/v1/messages',
-  'your-anthropic-key',
+  'sk-ant-your-key',
   true
 );
 ```
 
-### 管理配置
+### 推理模型 Effort 指令
+
+对于支持 `reasoning_effort` 参数的推理模型(如 OpenAI o1、o3 系列),可以在 `model` 字段中附加 effort 级别:
+
+```sql
+-- 使用 @ 或 # 分隔符指定 effort
+INSERT INTO check_configs (name, type, model, endpoint, api_key, enabled)
+VALUES (
+  'OpenAI O1 高推理',
+  'openai',
+  'o1-preview@high',  -- 或 'o1-preview#high'
+  'https://api.openai.com/v1/chat/completions',
+  'sk-your-key',
+  true
+);
+```
+
+**支持的 effort 级别:**
+- `minimal` - 最低推理能力
+- `low` - 较低推理能力
+- `medium` - 中等推理能力(未指定时的默认值)
+- `high` - 最高推理能力
+
+**自动识别的推理模型关键词:**
+`codex`, `gpt-5`, `o1`, `o2`, `o3`, `o4`, `o5`, `o6`, `o7`, `o8`, `o9`, `deepseek-r1`, `qwq`
+
+### 管理现有配置
 
 ```sql
 -- 查看所有配置
-SELECT id, name, type, model, endpoint, enabled FROM check_configs;
+SELECT id, name, type, model, endpoint, enabled
+FROM check_configs
+ORDER BY created_at DESC;
 
--- 按 UUID 禁用
-UPDATE check_configs SET enabled = false WHERE id = 'your-uuid-here';
-
--- 按名称启用
-UPDATE check_configs SET enabled = true WHERE name = '主力 OpenAI';
-
--- 更新模型或端点
+-- 禁用配置
 UPDATE check_configs
-SET model = 'gpt-4o', endpoint = 'https://new-endpoint.com/v1/chat/completions'
+SET enabled = false
+WHERE name = '主力 OpenAI';
+
+-- 启用配置
+UPDATE check_configs
+SET enabled = true
+WHERE id = 'your-config-uuid';
+
+-- 更新端点或模型
+UPDATE check_configs
+SET endpoint = 'https://new-endpoint.com/v1/chat/completions',
+    model = 'gpt-4o'
 WHERE name = '主力 OpenAI';
 
 -- 删除配置
-DELETE FROM check_configs WHERE name = '旧配置';
+DELETE FROM check_configs
+WHERE name = '旧配置';
+
+-- 删除配置及其历史记录
+DELETE FROM check_history WHERE config_id = 'your-config-uuid';
+DELETE FROM check_configs WHERE id = 'your-config-uuid';
 ```
 
-## 文档索引
+## 项目架构
 
-- `docs/ARCHITECTURE.md`：系统架构与模块边界说明，适合新成员快速理解整体设计。
-- `docs/OPERATIONS.md`：运维与排障手册，涵盖部署、监控、常见故障排查流程。
-- `docs/EXTENDING_PROVIDERS.md`：扩展新的 Provider 与官方状态检查的开发指南。
+```
+check-cx/
+├── app/                          # Next.js App Router
+│   ├── page.tsx                 # 主页面 (Dashboard)
+│   ├── api/
+│   │   └── dashboard/           # Dashboard 数据 API
+│   └── layout.tsx               # 全局布局
+├── components/                   # React 组件
+│   ├── dashboard-view.tsx       # Dashboard 主视图
+│   ├── provider-icon.tsx        # Provider 图标组件
+│   └── ui/                      # shadcn/ui 组件
+├── lib/                         # 核心库
+│   ├── core/                    # 核心模块
+│   │   ├── poller.ts           # 后台轮询器
+│   │   ├── global-state.ts     # 全局状态管理
+│   │   ├── dashboard-data.ts   # Dashboard 数据聚合
+│   │   └── polling-config.ts   # 轮询配置
+│   ├── providers/               # Provider 检查实现
+│   │   ├── index.ts            # 统一入口
+│   │   ├── openai.ts           # OpenAI 检查器
+│   │   ├── gemini.ts           # Gemini 检查器
+│   │   ├── anthropic.ts        # Anthropic 检查器
+│   │   └── stream-check.ts     # 流式检查通用逻辑
+│   ├── database/                # 数据库操作
+│   │   ├── config-loader.ts    # 配置加载
+│   │   └── history.ts          # 历史记录管理
+│   ├── types/                   # TypeScript 类型定义
+│   ├── utils/                   # 工具函数
+│   └── supabase/                # Supabase 客户端
+├── supabase/
+│   └── migrations/              # 数据库迁移脚本
+└── docs/                        # 文档
+    ├── ARCHITECTURE.md          # 架构文档
+    ├── OPERATIONS.md            # 运维手册
+    └── EXTENDING_PROVIDERS.md   # Provider 扩展指南
+```
+
+### 数据流向
+
+```
+后台轮询 → 数据库 → 前端展示
+   ↓          ↓         ↓
+poller.ts → Supabase → dashboard-view.tsx
+   ↓          ↓         ↓
+providers/ → check_history → API 路由
+```
+
+### 核心工作流程
+
+1. **后台轮询**
+   - `lib/core/poller.ts` 在应用启动时自动初始化
+   - 按 `CHECK_POLL_INTERVAL_SECONDS` 间隔执行检测
+   - 使用全局状态防止重复执行
+
+2. **健康检查**
+   - `lib/providers/index.ts` 并发执行所有启用的配置
+   - 每个 provider 使用流式 API 进行快速检测
+   - 接收到首个响应 chunk 即判定为成功
+
+3. **数据存储**
+   - `lib/database/history.ts` 将结果写入 Supabase
+   - 每个配置最多保留 60 条历史记录
+   - 自动清理旧数据
+
+4. **前端展示**
+   - `components/dashboard-view.tsx` 定期调用 API 获取最新数据
+   - 展示时间轴、状态卡片、延迟曲线
+   - 自动刷新倒计时
+
+## 常用命令
+
+```bash
+# 开发
+pnpm dev              # 启动开发服务器
+pnpm lint             # 代码检查
+pnpm type-check       # TypeScript 类型检查
+
+# 构建
+pnpm build            # 构建生产版本
+pnpm start            # 启动生产服务器
+
+# 数据库
+pnpm db:types         # 生成 Supabase 类型定义
+```
+
+## 环境变量说明
+
+| 变量名 | 必需 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | - | Supabase 项目 URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` | ✅ | - | Supabase 公开密钥 |
+| `CHECK_POLL_INTERVAL_SECONDS` | ❌ | 60 | 检测间隔(秒),范围 15-600 |
+
+## 文档
+
+- [**架构文档**](docs/ARCHITECTURE.md) - 系统架构与模块设计
+- [**运维手册**](docs/OPERATIONS.md) - 部署、监控与故障排查
+- [**扩展指南**](docs/EXTENDING_PROVIDERS.md) - 添加新 Provider 的开发指南
+- [**Schema 文档**](docs/DATABASE_SCHEMA.md) - 数据库表结构详解
+
+## 常见问题
+
+### 1. 轮询器没有自动启动?
+
+检查服务器日志,确认 `lib/core/poller.ts` 已被加载。在开发模式下,Next.js 热重载可能导致轮询器重复初始化,这是正常现象。
+
+### 2. 配置修改后没有生效?
+
+配置会在下一次轮询时自动加载,无需重启服务。检查配置的 `enabled` 字段是否为 `true`。
+
+### 3. 如何调整检测超时时间?
+
+在 `lib/providers/stream-check.ts` 中修改 `DEFAULT_TIMEOUT_MS` 常量(默认 15000ms)。
+
+### 4. 如何添加自定义 Provider?
+
+参考 [扩展指南](docs/EXTENDING_PROVIDERS.md) 了解详细步骤。
+
+### 5. 历史数据能保存多久?
+
+每个配置最多保留 60 条历史记录。如需更长时间保存,可以修改 `lib/database/history.ts` 中的 `MAX_HISTORY_PER_CONFIG` 常量。
+
+## 技术栈
+
+- **框架**: Next.js 16 (App Router)
+- **UI**: React 19, shadcn/ui, Tailwind CSS
+- **数据库**: Supabase (PostgreSQL)
+- **类型**: TypeScript 5.x
+- **工具**: pnpm, ESLint, Prettier
 
 ## 贡献指南
 
-贡献者可参考 `AGENTS.md` 获取结构说明、开发流程、编码规范与提交流程。提交前请至少运行一次 `pnpm lint` 与本 README 中的 Supabase 配置校验步骤，确保面板能够拉取到真实检测数据。
+欢迎贡献代码、报告问题或提出建议!
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 提交 Pull Request
+
+### 开发规范
+
+- 提交前运行 `pnpm lint` 确保代码规范
+- 遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范
+- 为新功能编写文档
+- 保持单一职责原则,避免过度设计
+
+## 许可证
+
+[MIT License](LICENSE)
+
+## 致谢
+
+- [Next.js](https://nextjs.org/) - React 全栈框架
+- [shadcn/ui](https://ui.shadcn.com/) - 精美的 UI 组件库
+- [Supabase](https://supabase.com/) - 开源 Firebase 替代方案
+- [Vercel](https://vercel.com/) - 最佳的 Next.js 部署平台
+
+---
+
+<div align="center">
+  <p>如果这个项目对你有帮助,请给个 ⭐️ Star 支持一下!</p>
+  <p>Made with ❤️ by the Check CX Team</p>
+</div>
