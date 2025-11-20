@@ -64,9 +64,11 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                       : `placeholder-${index}`
                   }
                   className={cn(
-                    "group relative flex-1 transition-all duration-200",
+                    "group relative flex-1 transition-all duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/60",
                     segment ? preset?.dot : "bg-border/70"
                   )}
+                  role={segment ? "button" : undefined}
+                  tabIndex={segment ? 0 : -1}
                   aria-label={
                     segment
                       ? `${formattedTime} · ${preset?.label ?? ""} · 对话 ${formatLatency(
@@ -76,7 +78,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                   }
                 >
                   {segment && (
-                    <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden w-60 -translate-x-1/2 flex-col rounded-xl border border-border/80 bg-popover/95 p-3 text-[11px] text-foreground shadow-lg shadow-black/30 backdrop-blur group-hover:flex">
+                    <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden w-60 -translate-x-1/2 flex-col rounded-xl border border-border/80 bg-popover/95 p-3 text-[11px] text-foreground shadow-lg shadow-black/30 backdrop-blur group-focus:flex group-focus-visible:flex group-focus-within:flex group-hover:flex">
                       <p className="font-semibold text-xs">
                         {preset?.label} · {formattedTime}
                       </p>

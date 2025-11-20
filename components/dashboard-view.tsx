@@ -231,18 +231,20 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                         {officialStatus && officialStatusMeta ? (
                           <HoverCard openDelay={200}>
                             <HoverCardTrigger asChild>
-                              <span
+                              <button
+                                type="button"
                                 className={cn(
-                                  "inline-flex cursor-help items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-sm font-medium transition hover:border-border/80",
+                                  "inline-flex items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-sm font-medium transition hover:border-border/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60",
                                   officialStatusMeta.color
                                 )}
+                                aria-label={`官方状态：${officialStatusMeta.label}，点按查看详情`}
                               >
                                 <span
                                   className="h-1.5 w-1.5 rounded-full bg-current"
                                   aria-hidden="true"
                                 />
                                 {officialStatusMeta.label}
-                              </span>
+                              </button>
                             </HoverCardTrigger>
                             <HoverCardContent className="space-y-2 text-sm">
                               <div>
