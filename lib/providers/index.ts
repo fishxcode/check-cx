@@ -9,6 +9,7 @@ import { checkGemini } from "./gemini";
 import { checkAnthropic } from "./anthropic";
 
 const MAX_REQUEST_ABORT_RETRIES = 1;
+const FAILURE_CONFIRM_RETRIES = 1;
 const REQUEST_ABORTED_PATTERN = /request was aborted\.?/i;
 
 /**
@@ -97,9 +98,49 @@ export async function runProviderChecks(
     return [];
   }
 
-  const results = await Promise.all(
+  let results = await Promise.all(
     configs.map((config) => checkWithRetry(config))
   );
+
+  for (
+    let attempt = 0;
+    attempt < FAILURE_CONFIRM_RETRIES;
+    attempt += 1
+  ) {
+    const failedIndices = results.reduce<number[]>((acc, result, index) => {
+      if (result.status === "failed") {
+        acc.push(index);
+      }
+      return acc;
+    }, []);
+
+    if (failedIndices.length === 0) {
+      break;
+    }
+
+    console.warn(
+      `[check-cx] 发现 ${failedIndices.length} 个 Provider 检测失败，触发第 ${
+        attempt + 1
+      } 次重试确认`
+    );
+
+    const retryResults = await Promise.all(
+      failedIndices.map((index) => checkWithRetry(configs[index]))
+    );
+
+    let hasRemainingFailures = false;
+    retryResults.forEach((retryResult, offset) => {
+      const resultIndex = failedIndices[offset];
+      results[resultIndex] = retryResult;
+      if (retryResult.status === "failed") {
+        hasRemainingFailures = true;
+      }
+    });
+
+    if (!hasRemainingFailures) {
+      break;
+    }
+  }
 
   return results.sort((a, b) => a.name.localeCompare(b.name));
 }
