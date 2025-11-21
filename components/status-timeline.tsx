@@ -35,8 +35,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
-        暂无检测记录。请在 Supabase 的 <code>check_configs</code> 表中添加启用的配置，
-        然后等待轮询器写入首批历史数据。
+        该模型处于维护状态。
       </div>
     );
   }

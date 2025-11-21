@@ -17,6 +17,7 @@ import type {
   DashboardData,
   RefreshMode,
   HistorySnapshot,
+  CheckResult,
 } from "../types";
 
 /**
@@ -31,8 +32,12 @@ export async function loadDashboardData(options?: {
   refreshMode?: RefreshMode;
 }): Promise<DashboardData> {
   ensureOfficialStatusPoller();
-  const configs = await loadProviderConfigsFromDB();
-  const allowedIds = new Set(configs.map((item) => item.id));
+  const allConfigs = await loadProviderConfigsFromDB();
+  // 分离维护中的配置和正常配置
+  const maintenanceConfigs = allConfigs.filter((cfg) => cfg.is_maintenance);
+  const activeConfigs = allConfigs.filter((cfg) => !cfg.is_maintenance);
+
+  const allowedIds = new Set(activeConfigs.map((item) => item.id));
   const pollIntervalMs = getPollingIntervalMs();
   const pollIntervalLabel = getPollingIntervalLabel();
   const providerKey =
@@ -64,7 +69,7 @@ export async function loadDashboardData(options?: {
     }
 
     const inflightPromise = (async () => {
-      const results = await runProviderChecks(configs);
+      const results = await runProviderChecks(activeConfigs);
       let nextHistory: HistorySnapshot;
       if (results.length > 0) {
         nextHistory = filterHistory(await appendHistory(results));
@@ -124,9 +129,38 @@ export async function loadDashboardData(options?: {
     }
   );
 
-  const providerTimelines = mappedTimelines
-    .filter((timeline): timeline is ProviderTimeline => Boolean(timeline))
-    .sort((a, b) => a.latest.name.localeCompare(b.latest.name));
+  // 为维护中的配置生成虚拟时间线
+  const maintenanceTimelines = maintenanceConfigs.map<ProviderTimeline>((config) => {
+    const latest: CheckResult = {
+      id: config.id,
+      name: config.name,
+      type: config.type,
+      endpoint: config.endpoint,
+      model: config.model,
+      status: "maintenance",
+      latencyMs: null,
+      pingLatencyMs: null,
+      message: "配置处于维护模式",
+      checkedAt: new Date().toISOString(),
+    };
+
+    // 附加官方状态
+    const officialStatus = getOfficialStatus(config.type);
+    if (officialStatus) {
+      latest.officialStatus = officialStatus;
+    }
+
+    return {
+      id: config.id,
+      items: [],
+      latest,
+    };
+  });
+
+  const providerTimelines = [
+    ...mappedTimelines.filter((timeline): timeline is ProviderTimeline => Boolean(timeline)),
+    ...maintenanceTimelines,
+  ].sort((a, b) => a.latest.name.localeCompare(b.latest.name));
 
   const allEntries = providerTimelines
     .flatMap((timeline) => timeline.items)

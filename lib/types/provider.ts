@@ -17,6 +17,7 @@ export interface ProviderConfig {
   endpoint: string;
   model: string;
   apiKey: string;
+  is_maintenance: boolean;
 }
 
 /**

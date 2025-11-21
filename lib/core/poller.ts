@@ -45,7 +45,10 @@ async function tick() {
 
   setPollerRunning(true);
   try {
-    const configs = await loadProviderConfigsFromDB();
+    const allConfigs = await loadProviderConfigsFromDB();
+    // 过滤掉维护中的配置
+    const configs = allConfigs.filter((cfg) => !cfg.is_maintenance);
+
     if (configs.length === 0) {
       console.log(`[check-cx] 数据库中未找到启用的配置，本轮 ping 结束`);
       return;
@@ -91,6 +94,7 @@ async function tick() {
       operational: 0,
       degraded: 0,
       failed: 0,
+      maintenance: 0,
     };
     results.forEach((result) => {
       statusCounts[result.status] += 1;

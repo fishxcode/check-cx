@@ -14,6 +14,7 @@ export interface CheckConfigRow {
   endpoint: string;
   api_key: string;
   enabled: boolean;
+  is_maintenance: boolean;
   created_at?: string;
 }
 

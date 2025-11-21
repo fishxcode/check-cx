@@ -16,7 +16,7 @@ export async function loadProviderConfigsFromDB(): Promise<ProviderConfig[]> {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("check_configs")
-      .select("id, name, type, model, endpoint, api_key")
+      .select("id, name, type, model, endpoint, api_key, is_maintenance")
       .eq("enabled", true)
       .order("id");
 
@@ -31,13 +31,14 @@ export async function loadProviderConfigsFromDB(): Promise<ProviderConfig[]> {
     }
 
     const configs: ProviderConfig[] = data.map(
-      (row: Pick<CheckConfigRow, "id" | "name" | "type" | "model" | "endpoint" | "api_key">) => ({
+      (row: Pick<CheckConfigRow, "id" | "name" | "type" | "model" | "endpoint" | "api_key" | "is_maintenance">) => ({
         id: row.id,
         name: row.name,
         type: row.type as ProviderType,
         endpoint: row.endpoint,
         model: row.model,
         apiKey: row.api_key,
+        is_maintenance: row.is_maintenance,
       })
     );
 

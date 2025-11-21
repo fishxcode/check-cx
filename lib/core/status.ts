@@ -5,7 +5,7 @@ export const STATUS_META: Record<
   {
     label: string;
     description: string;
-    badge: "success" | "warning" | "danger";
+    badge: "success" | "warning" | "danger" | "secondary";
     dot: string;
   }
 > = {
@@ -26,6 +26,12 @@ export const STATUS_META: Record<
     description: "请求失败或超时",
     badge: "danger",
     dot: "bg-rose-500",
+  },
+  maintenance: {
+    label: "维护中",
+    description: "人工维护,已停止检查",
+    badge: "secondary",
+    dot: "bg-blue-500",
   },
 };
 
