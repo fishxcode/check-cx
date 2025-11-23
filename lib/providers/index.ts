@@ -98,7 +98,7 @@ export async function runProviderChecks(
     return [];
   }
 
-  let results = await Promise.all(
+  const results = await Promise.all(
     configs.map((config) => checkWithRetry(config))
   );
 

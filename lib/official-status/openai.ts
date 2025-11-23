@@ -14,15 +14,20 @@ const TIMEOUT_MS = 15000; // 15 秒超时
  */
 interface OpenAIStatusResponse {
   summary: {
-    affected_components?: Array<{
+    components?: Array<{
+      id: string;
       name: string;
+      status_page_id: string;
+    }>;
+    affected_components?: Array<{
+      component_id: string;
       status: string;
     }>;
     ongoing_incidents?: Array<{
       name: string;
       status: string;
       affected_components?: Array<{
-        name: string;
+        component_id: string;
         status: string;
       }>;
     }>;
@@ -84,6 +89,7 @@ function parseOpenAIStatus(
   data: OpenAIStatusResponse,
   checkedAt: string
 ): OfficialStatusResult {
+  const components = data.summary.components || [];
   const affectedComponents = data.summary.affected_components || [];
   const ongoingIncidents = data.summary.ongoing_incidents || [];
 
@@ -96,9 +102,17 @@ function parseOpenAIStatus(
     };
   }
 
-  // 收集受影响组件名称
-  const affectedNames = new Set<string>();
-  affectedComponents.forEach((comp) => affectedNames.add(comp.name));
+  // 构建组件 ID 到名称的映射
+  const componentIdToName = new Map<string, string>();
+  components.forEach((comp) => {
+    componentIdToName.set(comp.id, comp.name);
+  });
+
+  // 收集受影响组件的 ID 和状态
+  const affectedComponentIds = new Set<string>();
+  affectedComponents.forEach((comp) => {
+    affectedComponentIds.add(comp.component_id);
+  });
 
   // 判断状态严重程度
   let status: OfficialHealthStatus = "degraded";
@@ -129,16 +143,20 @@ function parseOpenAIStatus(
       status = "down";
     }
 
-    // 收集事件中受影响的组件
+    // 收集事件中受影响的组件 ID
     if (incident.affected_components) {
-      incident.affected_components.forEach((comp) =>
-        affectedNames.add(comp.name)
-      );
+      incident.affected_components.forEach((comp) => {
+        affectedComponentIds.add(comp.component_id);
+      });
     }
   }
 
+  // 将组件 ID 转换为组件名称
+  const componentList = Array.from(affectedComponentIds)
+    .map((id) => componentIdToName.get(id))
+    .filter((name): name is string => Boolean(name));
+
   // 生成状态消息
-  const componentList = Array.from(affectedNames);
   const message =
     componentList.length > 0
       ? `${componentList.length} 个组件受影响: ${componentList.slice(0, 3).join(", ")}${componentList.length > 3 ? "..." : ""}`
