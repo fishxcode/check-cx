@@ -44,6 +44,8 @@ Check CX 是一套基于 **Next.js 16** + **shadcn/ui** 构建的现代化 AI �
 - 支持 OpenAI、Gemini、Anthropic 及自定义端点
 - 配置修改即时生效,无需重启服务
 - 支持批量启用/禁用检测任务
+- **支持配置分组管理**,按服务商或用途组织配置
+- **维护模式**,临时暂停检测而不删除配置
 
 ### ⏱️ 可靠的健康检查
 
@@ -61,6 +63,8 @@ Check CX 是一套基于 **Next.js 16** + **shadcn/ui** 构建的现代化 AI �
 - 时间轴展示最近 1 小时的检测历史
 - 实时延迟曲线与状态变化
 - 自动刷新倒计时显示
+- **分组折叠面板**,清晰展示不同类别的服务
+- **分组详情页**,深入查看单个分组的所有配置
 - 响应式设计,支持多屏幕尺寸
 - 适合大屏/TV 循环展示
 
@@ -173,6 +177,9 @@ Check CX 使用 Supabase 的两张核心表:
 | `endpoint` | TEXT | API 端点 URL |
 | `api_key` | TEXT | API 密钥 |
 | `enabled` | BOOLEAN | 是否启用 |
+| `is_maintenance` | BOOLEAN | 维护模式,启用后暂停检测 |
+| `user_agent` | TEXT | 自定义 User-Agent(可选) |
+| `group_name` | TEXT | 分组名称(可选) |
 
 **`check_history` - 历史记录表**
 
@@ -182,6 +189,7 @@ Check CX 使用 Supabase 的两张核心表:
 | `config_id` | UUID | 关联的配置 ID |
 | `status` | TEXT | 状态: `operational` / `degraded` / `failed` |
 | `latency_ms` | INTEGER | 响应延迟(毫秒) |
+| `ping_latency_ms` | INTEGER | 端点 Ping 延迟(毫秒) |
 | `checked_at` | TIMESTAMPTZ | 检测时间 |
 | `message` | TEXT | 错误信息(可选) |
 
@@ -288,17 +296,101 @@ DELETE FROM check_history WHERE config_id = 'your-config-uuid';
 DELETE FROM check_configs WHERE id = 'your-config-uuid';
 ```
 
+### 分组管理
+
+通过 `group_name` 字段可以将配置分组,便于管理和展示。
+
+```sql
+-- 添加配置到指定分组
+INSERT INTO check_configs (name, type, model, endpoint, api_key, group_name, enabled)
+VALUES (
+  '主力 OpenAI',
+  'openai',
+  'gpt-4o-mini',
+  'https://api.openai.com/v1/chat/completions',
+  'sk-your-key',
+  '主力服务商',
+  true
+);
+
+-- 将现有配置移入分组
+UPDATE check_configs
+SET group_name = '备选服务商'
+WHERE name = 'Gemini 备份';
+
+-- 移出分组(设为未分组)
+UPDATE check_configs
+SET group_name = NULL
+WHERE name = '...';
+
+-- 查看所有分组
+SELECT DISTINCT group_name FROM check_configs WHERE group_name IS NOT NULL;
+```
+
+**分组特性:**
+- 首页按分组折叠展示所有配置
+- 点击分组标题可跳转到分组详情页 (`/group/{groupName}`)
+- 未设置 `group_name` 的配置归入"未分组"
+- 分组按字母序排列,"未分组"显示在最后
+
+### 维护模式
+
+通过 `is_maintenance` 字段可以临时暂停某个配置的检测,而不必禁用或删除它。
+
+```sql
+-- 启用维护模式(暂停检测)
+UPDATE check_configs
+SET is_maintenance = true
+WHERE name = '主力 OpenAI';
+
+-- 恢复正常检测
+UPDATE check_configs
+SET is_maintenance = false
+WHERE name = '主力 OpenAI';
+
+-- 查看所有维护中的配置
+SELECT name, type, model FROM check_configs WHERE is_maintenance = true;
+```
+
+**维护模式特性:**
+- 维护中的配置不会执行实际检测
+- 在 Dashboard 中显示为特殊的"维护中"状态
+- 历史记录保留,恢复后继续累积
+- 适用于已知服务商维护、计划停机等场景
+
+### 自定义 User-Agent
+
+某些 API 端点可能对默认 User-Agent 有限制,可以通过 `user_agent` 字段自定义请求头。
+
+```sql
+-- 设置自定义 User-Agent
+UPDATE check_configs
+SET user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+WHERE name = '主力 OpenAI';
+
+-- 清除自定义 User-Agent(恢复使用默认值)
+UPDATE check_configs
+SET user_agent = NULL
+WHERE name = '主力 OpenAI';
+```
+
 ## 项目架构
 
 ```
 check-cx/
 ├── app/                          # Next.js App Router
 │   ├── page.tsx                 # 主页面 (Dashboard)
+│   ├── group/
+│   │   └── [groupName]/
+│   │       └── page.tsx         # 分组详情页
 │   ├── api/
-│   │   └── dashboard/           # Dashboard 数据 API
+│   │   ├── dashboard/           # Dashboard 数据 API
+│   │   └── group/
+│   │       └── [groupName]/     # 分组数据 API
 │   └── layout.tsx               # 全局布局
 ├── components/                   # React 组件
-│   ├── dashboard-view.tsx       # Dashboard 主视图
+│   ├── dashboard-view.tsx       # Dashboard 主视图(含分组面板)
+│   ├── group-dashboard-view.tsx # 分组详情视图
 │   ├── provider-icon.tsx        # Provider 图标组件
 │   └── ui/                      # shadcn/ui 组件
 ├── lib/                         # 核心库
@@ -306,6 +398,7 @@ check-cx/
 │   │   ├── poller.ts           # 后台轮询器
 │   │   ├── global-state.ts     # 全局状态管理
 │   │   ├── dashboard-data.ts   # Dashboard 数据聚合
+│   │   ├── group-data.ts       # 分组数据加载
 │   │   └── polling-config.ts   # 轮询配置
 │   ├── providers/               # Provider 检查实现
 │   │   ├── index.ts            # 统一入口
@@ -332,9 +425,11 @@ check-cx/
 ```
 后台轮询 → 数据库 → 前端展示
    ↓          ↓         ↓
-poller.ts → Supabase → dashboard-view.tsx
+poller.ts → Supabase → dashboard-view.tsx (首页)
    ↓          ↓         ↓
-providers/ → check_history → API 路由
+providers/ → check_history → group-dashboard-view.tsx (分组页)
+                              ↓
+                          /api/group/[groupName]
 ```
 
 ### 核心工作流程
@@ -356,6 +451,8 @@ providers/ → check_history → API 路由
 
 4. **前端展示**
    - `components/dashboard-view.tsx` 定期调用 API 获取最新数据
+   - 首页按分组折叠展示所有配置
+   - `components/group-dashboard-view.tsx` 展示单个分组详情
    - 展示时间轴、状态卡片、延迟曲线
    - 自动刷新倒计时
 
@@ -411,6 +508,15 @@ pnpm db:types         # 生成 Supabase 类型定义
 ### 5. 历史数据能保存多久?
 
 每个配置最多保留 60 条历史记录。如需更长时间保存,可以修改 `lib/database/history.ts` 中的 `MAX_HISTORY_PER_CONFIG` 常量。
+
+### 6. 如何使用分组功能?
+
+在 `check_configs` 表中设置 `group_name` 字段即可。相同 `group_name` 的配置会自动归为一组,在首页以折叠面板形式展示。点击分组标题可进入分组详情页。
+
+### 7. 维护模式和禁用有什么区别?
+
+- **禁用** (`enabled = false`): 配置完全不执行,不显示在 Dashboard 中
+- **维护模式** (`is_maintenance = true`): 配置仍显示在 Dashboard 中,但显示为"维护中"状态,不执行实际检测
 
 ## 技术栈
 
