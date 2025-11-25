@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "@/lib/core/poller";
@@ -37,9 +36,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <Script id="theme-boot" strategy="beforeInteractive">
-        {themeBootScript}
-      </Script>
+      <head>
+        <script
+          id="theme-boot"
+          dangerouslySetInnerHTML={{ __html: themeBootScript }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
