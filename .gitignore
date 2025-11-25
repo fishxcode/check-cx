@@ -47,3 +47,5 @@ next-env.d.ts
 combined.log
 error.log
 
+.playwright-mcp
+.mcp.json
