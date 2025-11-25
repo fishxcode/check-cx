@@ -243,14 +243,16 @@ function GroupPanel({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-4">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-xl border bg-card/60 px-6 py-4 text-left shadow-sm transition hover:bg-card/80">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">{group.displayName}</h2>
-          <span className="text-sm text-muted-foreground">
-            {group.timelines.length} 个配置
-          </span>
+      <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-xl border bg-card/60 px-4 py-3 text-left shadow-sm transition hover:bg-card/80 sm:px-6 sm:py-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <h2 className="text-base font-semibold sm:text-lg">{group.displayName}</h2>
+            <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
+              {group.timelines.length} 个配置
+            </span>
+          </div>
           {/* 状态统计徽章 */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {statusSummary.operational > 0 && (
               <Badge variant="success" className="text-xs">
                 {statusSummary.operational} 正常
@@ -273,11 +275,11 @@ function GroupPanel({
             )}
           </div>
         </div>
-        <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+        <ChevronDown className="ml-2 h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className={`grid gap-6 ${gridColsClass}`}>
+        <div className={`grid gap-4 sm:gap-6 ${gridColsClass}`}>
           {group.timelines.map((timeline) => (
             <ProviderCard
               key={timeline.id}
