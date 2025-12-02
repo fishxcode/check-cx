@@ -76,6 +76,9 @@ function getAnthropicClient(config: ProviderConfig): Anthropic {
     defaultHeaders: {
       "User-Agent": userAgent,
     },
+    // 禁用 Next.js fetch 缓存，避免 AbortController 中止请求时的缓存错误
+    fetch: (url, init) =>
+      fetch(url, { ...init, cache: "no-store" }),
   });
 
   anthropicClientCache.set(cacheKey, client);
