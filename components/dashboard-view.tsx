@@ -201,6 +201,24 @@ function ProviderCard({
             </p>
             <p className="mt-1 text-foreground">{items.length} 次检测</p>
           </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+                可用性（近60次）
+              </p>
+              <p className="mt-1 text-foreground">
+                {items.length > 0
+                  ? `${(
+                      (items.filter(
+                        (item) =>
+                          item.status === "operational" ||
+                          item.status === "degraded"
+                      ).length /
+                        items.length) *
+                      100
+                    ).toFixed(1)}%`
+                  : "—"}
+              </p>
+            </div>
         </div>
       </CardHeader>
       <CardContent className="relative z-10 border-t border-border/60 pt-4">
