@@ -270,10 +270,16 @@ function GroupPanel({
                    {statusSummary.operational} 正常
                  </span>
                )}
-               {(statusSummary.degraded > 0 || statusSummary.failed > 0) && (
+               {statusSummary.degraded > 0 && (
+                 <span className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    {statusSummary.degraded} 延迟
+                 </span>
+               )}
+               {statusSummary.failed > 0 && (
                  <span className="flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                    {statusSummary.degraded + statusSummary.failed} 异常
+                    {statusSummary.failed} 异常
                  </span>
                )}
             </div>
