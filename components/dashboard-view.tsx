@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ExternalLink, RefreshCcw, Activity, Zap, Radio } from "lucide-react";
+import { ChevronDown, ExternalLink, RefreshCcw, Activity, Zap, Radio, Github } from "lucide-react";
 
 import { ProviderIcon } from "@/components/provider-icon";
 import { StatusTimeline } from "@/components/status-timeline";
@@ -90,25 +90,27 @@ function ProviderCard({
       
       <div className="flex-1 p-5">
         <div className="mb-4 flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10">
               <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
             </div>
-            <div>
-              <h3 className="font-bold leading-none tracking-tight text-foreground">
-                {latest.name}
-              </h3>
-              <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                 <span className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                 <h3 className="flex-1 truncate font-bold leading-none tracking-tight text-foreground">
+                   {latest.name}
+                 </h3>
+                 <Badge variant={preset.badge} className="shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md">
+                   {preset.label}
+                 </Badge>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
                   {PROVIDER_LABEL[latest.type]}
                 </span>
-                <span className="font-mono opacity-60">{latest.model}</span>
+                <span className="break-all font-mono opacity-60">{latest.model}</span>
               </div>
             </div>
           </div>
-          <Badge variant={preset.badge} className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md">
-            {preset.label}
-          </Badge>
         </div>
 
         <div className="mb-4 grid grid-cols-2 gap-3">
@@ -173,7 +175,7 @@ function ProviderCard({
                         {formatLocalTime(officialStatus.checkedAt)} 更新
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground break-words">
                       {officialStatus.message || "暂无官方说明"}
                     </p>
                     {officialStatus.affectedComponents &&
@@ -256,28 +258,28 @@ function GroupPanel({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="rounded-3xl border bg-white/30 p-6 backdrop-blur-sm dark:bg-black/10">
-      <div className="flex items-center justify-between">
-        <CollapsibleTrigger className="group flex items-center gap-4 text-left transition hover:opacity-80 focus-visible:outline-none">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10">
+      <div className="flex items-center justify-between gap-4">
+        <CollapsibleTrigger className="group flex flex-1 min-w-0 items-center gap-4 text-left transition hover:opacity-80 focus-visible:outline-none">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10">
             <ChevronDown className="h-5 w-5 text-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
           </div>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">{group.displayName}</h2>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-2xl font-bold tracking-tight text-foreground">{group.displayName}</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                {statusSummary.operational > 0 && (
-                 <span className="flex items-center gap-1.5">
+                 <span className="flex items-center gap-1.5 whitespace-nowrap">
                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                    {statusSummary.operational} 正常
                  </span>
                )}
                {statusSummary.degraded > 0 && (
-                 <span className="flex items-center gap-1.5">
+                 <span className="flex items-center gap-1.5 whitespace-nowrap">
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                     {statusSummary.degraded} 延迟
                  </span>
                )}
                {statusSummary.failed > 0 && (
-                 <span className="flex items-center gap-1.5">
+                 <span className="flex items-center gap-1.5 whitespace-nowrap">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
                     {statusSummary.failed} 异常
                  </span>
@@ -288,9 +290,10 @@ function GroupPanel({
         
         <Link
             href={groupLink}
-            className="group flex h-10 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition-all hover:bg-foreground/90 hover:px-6"
+            className="group flex h-10 shrink-0 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition-all hover:bg-foreground/90 hover:px-6"
         >
-            详情 <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+            <span className="whitespace-nowrap">详情</span>
+            <ExternalLink className="h-3.5 w-3.5 opacity-70" />
         </Link>
       </div>
 
@@ -443,6 +446,15 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
               System Status
             </span>
+            <div className="h-4 w-[1px] bg-border/60" />
+            <Link
+              href="https://github.com/BingZi-233/check-cx"
+              target="_blank"
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Github className="h-3.5 w-3.5" />
+              <span>GitHub</span>
+            </Link>
           </div>
           
           <h1 className="max-w-2xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">

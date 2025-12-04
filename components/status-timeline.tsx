@@ -159,7 +159,7 @@ export function StatusTimeline({ items, nextRefreshInMs }: StatusTimelineProps) 
                    </div>
                    
                    {segment.message && (
-                     <div className="rounded bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                     <div className="rounded bg-muted/30 p-2 text-[10px] text-muted-foreground break-words">
                        {segment.message}
                      </div>
                    )}
