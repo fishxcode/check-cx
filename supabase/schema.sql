@@ -50,6 +50,17 @@ CREATE TABLE public.check_history (
     CONSTRAINT fk_config FOREIGN KEY (config_id) REFERENCES public.check_configs(id) ON DELETE CASCADE
 );
 
+-- 分组信息表
+CREATE TABLE public.group_info (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    group_name text NOT NULL,
+    website_url text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT group_info_pkey PRIMARY KEY (id),
+    CONSTRAINT group_info_group_name_key UNIQUE (group_name)
+);
+
 -- 序列属主
 ALTER SEQUENCE public.check_history_id_seq
     OWNED BY public.check_history.id;
@@ -141,9 +152,15 @@ BEFORE UPDATE ON public.check_configs
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
 
+CREATE TRIGGER update_group_info_updated_at
+BEFORE UPDATE ON public.group_info
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
 -- 表与列注释
 COMMENT ON TABLE public.check_configs IS 'AI 服务商配置表 - 存储各个 AI 服务商的 API 配置信息';
 COMMENT ON TABLE public.check_history IS '健康检测历史记录表 - 存储每次 API 健康检测的结果';
+COMMENT ON TABLE public.group_info IS '分组信息表 - 存储分组的额外信息';
 
 COMMENT ON COLUMN public.check_configs.id IS '配置 UUID - 自动生成的唯一标识符';
 COMMENT ON COLUMN public.check_configs.name IS '配置显示名称 - 用于前端展示的友好名称';
@@ -166,6 +183,9 @@ COMMENT ON COLUMN public.check_history.checked_at IS '检测时间 - 执行健�
 COMMENT ON COLUMN public.check_history.message IS '状态消息 - 详细的状态描述或错误信息';
 COMMENT ON COLUMN public.check_history.created_at IS '记录创建时间 - 记录写入数据库的时间戳';
 COMMENT ON COLUMN public.check_history.config_id IS '配置 UUID - 关联 check_configs.id,标识哪个配置的检测结果';
+
+COMMENT ON COLUMN public.group_info.group_name IS '分组名称 - 关联 check_configs.group_name';
+COMMENT ON COLUMN public.group_info.website_url IS '网站地址';
 
 -- RPC: 获取最近历史记录
 CREATE OR REPLACE FUNCTION public.get_recent_check_history(

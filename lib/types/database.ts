@@ -33,3 +33,14 @@ export interface CheckHistoryRow {
   checked_at: string;
   message: string | null;
 }
+
+/**
+ * group_info 表的行类型
+ */
+export interface GroupInfoRow {
+  id: string;
+  group_name: string;
+  website_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
