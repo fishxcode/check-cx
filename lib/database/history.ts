@@ -4,7 +4,7 @@
 
 import "server-only";
 import type {PostgrestError, SupabaseClient} from "@supabase/supabase-js";
-import {createClient} from "../supabase/server";
+import {createAdminClient} from "../supabase/admin";
 import type {CheckResult, HistorySnapshot} from "../types";
 import {logError} from "../utils";
 
@@ -44,7 +44,7 @@ class SnapshotStore {
       return {};
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc(
       RPC_RECENT_HISTORY,
       {
@@ -69,7 +69,7 @@ class SnapshotStore {
       return;
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const records = results.map((result) => ({
       config_id: result.id,
       status: result.status,
@@ -89,7 +89,7 @@ class SnapshotStore {
   }
 
   async prune(limit: number = MAX_POINTS_PER_PROVIDER): Promise<void> {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     await this.pruneInternal(supabase, limit);
   }
 

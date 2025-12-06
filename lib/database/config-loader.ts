@@ -3,7 +3,7 @@
  */
 
 import "server-only";
-import {createClient} from "../supabase/server";
+import {createAdminClient} from "../supabase/admin";
 import type {CheckConfigRow, ProviderConfig, ProviderType} from "../types";
 import {logError} from "../utils";
 
@@ -13,7 +13,7 @@ import {logError} from "../utils";
  */
 export async function loadProviderConfigsFromDB(): Promise<ProviderConfig[]> {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("check_configs")
       .select("id, name, type, model, endpoint, api_key, is_maintenance, request_header, metadata, group_name")
