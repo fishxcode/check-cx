@@ -83,6 +83,22 @@ COMMENT ON TABLE public.group_info IS '分组信息表';
 COMMENT ON COLUMN public.group_info.group_name IS '分组名称，关联 check_configs.group_name';
 COMMENT ON COLUMN public.group_info.website_url IS '网站地址';
 
+-- 系统通知表：存储全局系统通知
+CREATE TABLE public.system_notifications (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    message     text NOT NULL,
+    is_active   boolean DEFAULT true,
+    level       text DEFAULT 'info',
+    created_at  timestamptz DEFAULT now()
+);
+
+COMMENT ON TABLE public.system_notifications IS '系统通知表';
+COMMENT ON COLUMN public.system_notifications.id IS '通知 UUID';
+COMMENT ON COLUMN public.system_notifications.message IS '通知内容，支持 Markdown';
+COMMENT ON COLUMN public.system_notifications.is_active IS '是否激活，true 为显示';
+COMMENT ON COLUMN public.system_notifications.level IS '通知级别：info, warning, error';
+COMMENT ON COLUMN public.system_notifications.created_at IS '创建时间';
+
 -- -----------------------------------------------------------------------------
 -- 3. 索引
 -- -----------------------------------------------------------------------------
@@ -125,6 +141,7 @@ CREATE TRIGGER update_group_info_updated_at
 ALTER TABLE public.check_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.check_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_info ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_notifications ENABLE ROW LEVEL SECURITY;
 
 -- check_history: 允许匿名用户读取
 CREATE POLICY allow_anon_select_history
@@ -136,6 +153,13 @@ CREATE POLICY allow_anon_select_history
 -- group_info: 允许所有人读取
 CREATE POLICY allow_public_read_group_info
     ON public.group_info
+    FOR SELECT
+    TO public
+    USING (true);
+
+-- system_notifications: 允许所有人读取
+CREATE POLICY allow_public_read_notifications
+    ON public.system_notifications
     FOR SELECT
     TO public
     USING (true);

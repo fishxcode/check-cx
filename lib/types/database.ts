@@ -44,3 +44,14 @@ export interface GroupInfoRow {
   created_at?: string;
   updated_at?: string;
 }
+
+/**
+ * system_notifications 表的行类型
+ */
+export interface SystemNotificationRow {
+  id: string;
+  message: string;
+  is_active: boolean;
+  level: "info" | "warning" | "error";
+  created_at: string;
+}

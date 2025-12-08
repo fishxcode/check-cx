@@ -64,11 +64,27 @@ CREATE TABLE dev.group_info (
     CONSTRAINT group_info_group_name_key UNIQUE (group_name)
 );
 
+-- 系统通知表
+CREATE TABLE dev.system_notifications (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    message text NOT NULL,
+    is_active boolean DEFAULT true,
+    level text DEFAULT 'info',
+    created_at timestamptz DEFAULT now()
+);
+
 -- Enable RLS on group_info
 ALTER TABLE dev.group_info ENABLE ROW LEVEL SECURITY;
 
 -- Create policy to allow read access for everyone
 CREATE POLICY "Allow public read access" ON dev.group_info
+FOR SELECT USING (true);
+
+-- Enable RLS on system_notifications
+ALTER TABLE dev.system_notifications ENABLE ROW LEVEL SECURITY;
+
+-- Create policy to allow read access for everyone on system_notifications
+CREATE POLICY "Allow public read access" ON dev.system_notifications
 FOR SELECT USING (true);
 
 -- 序列属主
@@ -112,6 +128,7 @@ EXECUTE FUNCTION dev.update_updated_at_column();
 COMMENT ON TABLE dev.check_configs IS 'AI 服务商配置表 - 存储各个 AI 服务商的 API 配置信息';
 COMMENT ON TABLE dev.check_history IS '健康检测历史记录表 - 存储每次 API 健康检测的结果';
 COMMENT ON TABLE dev.group_info IS '分组信息表 - 存储分组的额外信息';
+COMMENT ON TABLE dev.system_notifications IS '系统通知表 - 存储全局系统通知';
 
 COMMENT ON COLUMN dev.check_configs.id IS '配置 UUID - 自动生成的唯一标识符';
 COMMENT ON COLUMN dev.check_configs.name IS '配置显示名称 - 用于前端展示的友好名称';
@@ -137,6 +154,12 @@ COMMENT ON COLUMN dev.check_history.config_id IS '配置 UUID - 关联 check_con
 
 COMMENT ON COLUMN dev.group_info.group_name IS '分组名称 - 关联 check_configs.group_name';
 COMMENT ON COLUMN dev.group_info.website_url IS '网站地址';
+
+COMMENT ON COLUMN dev.system_notifications.id IS '通知 UUID';
+COMMENT ON COLUMN dev.system_notifications.message IS '通知内容，支持 Markdown';
+COMMENT ON COLUMN dev.system_notifications.is_active IS '是否激活，true 为显示';
+COMMENT ON COLUMN dev.system_notifications.level IS '通知级别：info, warning, error';
+COMMENT ON COLUMN dev.system_notifications.created_at IS '创建时间';
 
 -- RPC: 获取最近历史记录
 CREATE OR REPLACE FUNCTION dev.get_recent_check_history(
