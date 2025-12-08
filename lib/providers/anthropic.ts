@@ -7,6 +7,7 @@ import Anthropic, {APIUserAbortError as AnthropicAPIUserAbortError,} from "@anth
 import type {CheckResult, HealthStatus, ProviderConfig} from "../types";
 import {DEFAULT_ENDPOINTS} from "../types";
 import {getOrCreateClientCache, stableStringify} from "../utils";
+import {generateChallenge, validateResponse} from "./challenge";
 import {measureEndpointPing} from "./endpoint-ping";
 
 /**
@@ -113,16 +114,17 @@ export async function checkAnthropic(
 
   const displayEndpoint = config.endpoint || DEFAULT_ENDPOINTS.anthropic;
   const pingPromise = measureEndpointPing(displayEndpoint);
+  const challenge = generateChallenge();
 
   try {
     const client = getAnthropicClient(config);
 
-    // 使用 Messages 流式接口进行最小请求
+    // 使用 Messages 流式接口，发送随机数学题
     const stream = await client.messages.create(
       {
         model: config.model,
-        max_tokens: 1, // 仅需 1 个 token 即可确认服务可用
-        messages: [{ role: "user", content: "hi" }], // 最简短的消息
+        max_tokens: 16, // 足够返回数字答案
+        messages: [{ role: "user", content: challenge.prompt }],
         stream: true, // 启用流式响应
         // 合并 metadata 中的自定义参数
         ...(config.metadata || {}),
@@ -130,29 +132,49 @@ export async function checkAnthropic(
       { signal: controller.signal }
     );
 
-    // 读取完整的流式响应（内容本身不重要，只要能成功流式返回即可）
-    // 只需确保至少收到一个事件即可证明流可用
-    // 若长时间无事件，外层 AbortController 会触发超时
-    const iterator = stream[Symbol.asyncIterator]();
-    const { done } = await iterator.next();
-    if (!done) {
-      // 主动结束流，避免无意义的长时间占用
-      if (typeof (iterator as AsyncIterator<unknown> & { return?: () => void })
-        .return === "function") {
-        await (
-          iterator as AsyncIterator<unknown> & { return?: () => void }
-        ).return?.();
+    // 收集回复直到能验证答案
+    let collectedResponse = "";
+    let validated = false;
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        collectedResponse += event.delta.text;
+        // 一旦验证通过立即跳出
+        if (validateResponse(collectedResponse, challenge.expectedAnswer)) {
+          validated = true;
+          break;
+        }
       }
     }
 
     const latencyMs = Date.now() - startedAt;
+
+    // 验证回复是否包含正确答案
+    if (!validated) {
+      const pingLatencyMs = await pingPromise;
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        endpoint: displayEndpoint,
+        model: config.model,
+        status: "failed",
+        latencyMs,
+        pingLatencyMs,
+        checkedAt: new Date().toISOString(),
+        message: `回复验证失败: 期望 ${challenge.expectedAnswer}, 实际回复: ${collectedResponse.slice(0, 100) || "(空)"}`,
+      };
+    }
+
     const status: HealthStatus =
       latencyMs <= DEGRADED_THRESHOLD_MS ? "operational" : "degraded";
 
     const message =
       status === "degraded"
         ? `响应成功但耗时 ${latencyMs}ms`
-        : `流式响应正常 (${latencyMs}ms)`;
+        : `验证通过 (${latencyMs}ms)`;
 
     const pingLatencyMs = await pingPromise;
     return {

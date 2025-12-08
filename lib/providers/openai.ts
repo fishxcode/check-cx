@@ -10,6 +10,7 @@ import type {ChatCompletionCreateParamsStreaming} from "openai/resources/chat/co
 import type {CheckResult, HealthStatus, ProviderConfig} from "../types";
 import {DEFAULT_ENDPOINTS} from "../types";
 import {getOrCreateClientCache, stableStringify} from "../utils";
+import {generateChallenge, validateResponse} from "./challenge";
 import {measureEndpointPing} from "./endpoint-ping";
 
 /**
@@ -220,6 +221,7 @@ async function checkOpenAIResponses(
   const displayEndpoint = config.endpoint!;
   const pingPromise = measureEndpointPing(displayEndpoint);
   const { requestModel, reasoningEffort } = resolveModelPreferences(config.model);
+  const challenge = generateChallenge();
 
   try {
     const client = getResponsesClient(config);
@@ -228,7 +230,7 @@ async function checkOpenAIResponses(
     // 使用数组格式的 input 以兼容更多代理
     const requestParams: Parameters<typeof client.responses.create>[0] = {
       model: requestModel,
-      input: [{ type: "message", role: "user", content: "hi" }],
+      input: [{ type: "message", role: "user", content: challenge.prompt }],
       stream: true,
       // 合并 metadata 中的自定义参数
       ...(config.metadata || {}),
@@ -243,20 +245,50 @@ async function checkOpenAIResponses(
       signal: controller.signal,
     });
 
-    // 读取首个事件即可确认服务可用
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _event of stream as AsyncIterable<unknown>) {
-      break;
+    // 收集回复直到能验证答案
+    let collectedResponse = "";
+    let validated = false;
+    for await (const event of stream as AsyncIterable<{
+      type?: string;
+      delta?: string;
+    }>) {
+      // Responses API 的文本增量事件
+      if (event.type === "response.output_text.delta" && event.delta) {
+        collectedResponse += event.delta;
+        // 一旦验证通过立即跳出
+        if (validateResponse(collectedResponse, challenge.expectedAnswer)) {
+          validated = true;
+          break;
+        }
+      }
     }
 
     const latencyMs = Date.now() - startedAt;
+
+    // 验证回复是否包含正确答案
+    if (!validated) {
+      const pingLatencyMs = await pingPromise;
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        endpoint: displayEndpoint,
+        model: config.model,
+        status: "failed",
+        latencyMs,
+        pingLatencyMs,
+        checkedAt: new Date().toISOString(),
+        message: `回复验证失败: 期望 ${challenge.expectedAnswer}, 实际回复: ${collectedResponse.slice(0, 100) || "(空)"}`,
+      };
+    }
+
     const status: HealthStatus =
       latencyMs <= DEGRADED_THRESHOLD_MS ? "operational" : "degraded";
 
     const message =
       status === "degraded"
         ? `响应成功但耗时 ${latencyMs}ms`
-        : `流式响应正常 (${latencyMs}ms)`;
+        : `验证通过 (${latencyMs}ms)`;
 
     const pingLatencyMs = await pingPromise;
     return {
@@ -316,19 +348,18 @@ export async function checkOpenAI(
   const { requestModel, reasoningEffort } = resolveModelPreferences(
     config.model
   );
+  const challenge = generateChallenge();
 
   try {
     const client = getOpenAIClient(config);
 
-    // 使用 Chat Completions 流式接口进行最小请求
+    // 使用 Chat Completions 流式接口，发送随机数学题
     const requestPayload: ChatCompletionCreateParamsStreaming = {
       model: requestModel,
       messages: [
-        { role: "system", content: "" },
-        { role: "assistant", content: "" },
-        { role: "user", content: "hi" },
+        { role: "user", content: challenge.prompt },
       ],
-      max_tokens: 1,
+      max_tokens: 16, // 足够返回数字答案
       temperature: 0,
       stream: true,
       // 合并 metadata 中的自定义参数
@@ -343,27 +374,47 @@ export async function checkOpenAI(
       signal: controller.signal,
     });
 
-    // 只需读取第一个 chunk 即可确认服务可用（测量首字延迟）
-    const iterator = stream[Symbol.asyncIterator]();
-    const { done } = await iterator.next();
-    if (!done) {
-      // 主动结束流，避免无意义的长时间占用
-      if (typeof (iterator as AsyncIterator<unknown> & { return?: () => void })
-        .return === "function") {
-        await (
-          iterator as AsyncIterator<unknown> & { return?: () => void }
-        ).return?.();
+    // 收集回复直到能验证答案
+    let collectedResponse = "";
+    let validated = false;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        collectedResponse += content;
+        // 一旦验证通过立即跳出
+        if (validateResponse(collectedResponse, challenge.expectedAnswer)) {
+          validated = true;
+          break;
+        }
       }
     }
 
     const latencyMs = Date.now() - startedAt;
+
+    // 验证回复是否包含正确答案
+    if (!validated) {
+      const pingLatencyMs = await pingPromise;
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        endpoint: displayEndpoint,
+        model: config.model,
+        status: "failed",
+        latencyMs,
+        pingLatencyMs,
+        checkedAt: new Date().toISOString(),
+        message: `回复验证失败: 期望 ${challenge.expectedAnswer}, 实际回复: ${collectedResponse.slice(0, 100) || "(空)"}`,
+      };
+    }
+
     const status: HealthStatus =
       latencyMs <= DEGRADED_THRESHOLD_MS ? "operational" : "degraded";
 
     const message =
       status === "degraded"
         ? `响应成功但耗时 ${latencyMs}ms`
-        : `流式响应正常 (${latencyMs}ms)`;
+        : `验证通过 (${latencyMs}ms)`;
 
     const pingLatencyMs = await pingPromise;
     return {
