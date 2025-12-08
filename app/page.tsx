@@ -11,8 +11,8 @@ export default async function Home() {
   const data = await loadDashboardData({ refreshMode: "missing" });
 
   return (
-    <div className="py-12 md:py-16">
-      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 sm:px-6 lg:px-12">
+    <div className="py-8 md:py-16">
+      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 sm:gap-8 sm:px-6 lg:px-12">
         <DashboardView initialData={data} />
       </main>
       

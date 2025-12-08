@@ -2,7 +2,33 @@
 
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import Link from "next/link";
-import {Activity, ChevronDown, ExternalLink, Github, Radio, RefreshCcw, Zap} from "lucide-react";
+import {
+  Activity,
+  ChevronDown,
+  ExternalLink,
+  Github,
+  GripVertical,
+  Radio,
+  RefreshCcw,
+  Zap,
+} from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import {CSS} from "@dnd-kit/utilities";
 
 import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
@@ -88,18 +114,20 @@ function ProviderCard({
       <CornerPlus className="left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
       <CornerPlus className="right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
       
-      <div className="flex-1 p-5">
+      <div className="flex-1 p-4 sm:p-5">
         <div className="mb-4 flex items-start justify-between">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10">
-              <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10 sm:h-12 sm:w-12 sm:rounded-2xl">
+              <div className="scale-75 sm:scale-100">
+                <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
+              </div>
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                 <h3 className="flex-1 truncate font-bold leading-none tracking-tight text-foreground">
+                 <h3 className="flex-1 truncate text-base font-bold leading-none tracking-tight text-foreground sm:text-lg">
                    {latest.name}
                  </h3>
-                 <Badge variant={preset.badge} className="shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md">
+                 <Badge variant={preset.badge} className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-xs">
                    {preset.label}
                  </Badge>
               </div>
@@ -224,6 +252,42 @@ function ProviderCard({
 }
 
 /** 分组面板组件 */
+interface GroupPanelProps {
+  group: GroupedProviderTimelines;
+  timeToNextRefresh: number | null;
+  isCoarsePointer: boolean;
+  activeOfficialCardId: string | null;
+  setActiveOfficialCardId: (id: string | null) => void;
+  gridColsClass: string;
+  defaultOpen?: boolean;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+}
+
+function SortableGroupPanel(props: GroupPanelProps & { id: string }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    position: "relative" as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <GroupPanel {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
 function GroupPanel({
   group,
   timeToNextRefresh,
@@ -232,15 +296,8 @@ function GroupPanel({
   setActiveOfficialCardId,
   gridColsClass,
   defaultOpen = false,
-}: {
-  group: GroupedProviderTimelines;
-  timeToNextRefresh: number | null;
-  isCoarsePointer: boolean;
-  activeOfficialCardId: string | null;
-  setActiveOfficialCardId: (id: string | null) => void;
-  gridColsClass: string;
-  defaultOpen?: boolean;
-}) {
+  dragHandleProps,
+}: GroupPanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const statusSummary = useMemo(() => {
@@ -257,15 +314,28 @@ function GroupPanel({
   const groupLink = `/group/${encodeURIComponent(group.groupName)}`;
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="rounded-3xl border bg-white/30 p-6 backdrop-blur-sm dark:bg-black/10">
-      <div className="flex items-center justify-between gap-4">
-        <CollapsibleTrigger className="group flex flex-1 min-w-0 items-center gap-4 text-left transition hover:opacity-80 focus-visible:outline-none">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10">
-            <ChevronDown className="h-5 w-5 text-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className="rounded-3xl border bg-white/30 p-4 backdrop-blur-sm dark:bg-black/10 sm:p-6"
+    >
+      <div className="flex items-center justify-between gap-3 sm:gap-4">
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            className="cursor-grab p-2 text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
+            title="拖拽排序"
+          >
+            <GripVertical className="h-5 w-5" />
+          </div>
+        )}
+        <CollapsibleTrigger className="group flex flex-1 min-w-0 items-center gap-3 text-left transition hover:opacity-80 focus-visible:outline-none sm:gap-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10 sm:h-10 sm:w-10">
+            <ChevronDown className="h-4 w-4 text-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
-              <h2 className="truncate text-2xl font-bold tracking-tight text-foreground">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <h2 className="truncate text-lg font-bold tracking-tight text-foreground sm:text-2xl">
                 {group.displayName}
               </h2>
               {group.websiteUrl && (
@@ -305,9 +375,9 @@ function GroupPanel({
         
         <Link
             href={groupLink}
-            className="group flex h-10 shrink-0 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition-all hover:bg-foreground/90 hover:px-6"
+            className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground p-0 text-sm font-medium text-background transition-all hover:bg-foreground/90 sm:h-10 sm:w-auto sm:gap-2 sm:px-5 sm:hover:px-6"
         >
-            <span className="whitespace-nowrap">详情</span>
+            <span className="hidden whitespace-nowrap sm:inline">详情</span>
             <ExternalLink className="h-3.5 w-3.5 opacity-70" />
         </Link>
       </div>
@@ -348,10 +418,94 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   );
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeOfficialCardId, setActiveOfficialCardId] = useState<string | null>(null);
+  
+  const { providerTimelines, groupedTimelines, total, lastUpdated, pollIntervalLabel } = data;
+
+  // Initialize order with default data
+  const [orderedGroupNames, setOrderedGroupNames] = useState<string[]>(() => 
+    initialData.groupedTimelines.map(g => g.groupName)
+  );
+
   const latestCheckTimestamp = useMemo(
     () => getLatestCheckTimestamp(data.providerTimelines),
     [data.providerTimelines]
   );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  useEffect(() => {
+    // Client-side only: load from localStorage
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("check-cx-group-order");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setOrderedGroupNames(prev => {
+              const currentSet = new Set(initialData.groupedTimelines.map(g => g.groupName));
+              // Filter out saved names that no longer exist, and add new ones
+              const validSaved = parsed.filter(name => currentSet.has(name));
+              const newNames = initialData.groupedTimelines
+                .map(g => g.groupName)
+                .filter(name => !validSaved.includes(name));
+              return [...validSaved, ...newNames];
+            });
+          }
+        } catch (e) {
+          console.error("Failed to parse group order", e);
+        }
+      }
+    }
+  }, [initialData.groupedTimelines]);
+
+  // Sync when data updates (e.g. polling adds/removes groups)
+  useEffect(() => {
+    setOrderedGroupNames(prev => {
+      const currentNames = groupedTimelines.map(g => g.groupName);
+      const currentSet = new Set(currentNames);
+      
+      // Keep existing order for groups that still exist
+      const existingOrdered = prev.filter(name => currentSet.has(name));
+      
+      // Add any new groups that weren't in the previous order
+      const newGroups = currentNames.filter(name => !prev.includes(name));
+      
+      // If nothing changed in terms of set membership, don't update state to avoid re-renders
+      if (existingOrdered.length === prev.length && newGroups.length === 0 && existingOrdered.length === currentNames.length) {
+        return prev;
+      }
+
+      return [...existingOrdered, ...newGroups];
+    });
+  }, [groupedTimelines]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const {active, over} = event;
+    
+    if (over && active.id !== over.id) {
+      setOrderedGroupNames((items) => {
+        const oldIndex = items.indexOf(active.id as string);
+        const newIndex = items.indexOf(over.id as string);
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        
+        // Save to localStorage
+        if (typeof window !== "undefined") {
+          localStorage.setItem("check-cx-group-order", JSON.stringify(newOrder));
+        }
+        
+        return newOrder;
+      });
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     if (lockRef.current) {
@@ -423,7 +577,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     return () => window.clearInterval(countdownTimer);
   }, [data.pollIntervalMs, latestCheckTimestamp]);
 
-  const { providerTimelines, groupedTimelines, total, lastUpdated, pollIntervalLabel } = data;
   const lastUpdatedLabel = useMemo(
     () => (lastUpdated ? formatLocalTime(lastUpdated) : null),
     [lastUpdated]
@@ -452,34 +605,34 @@ export function DashboardView({ initialData }: DashboardViewProps) {
        <CornerPlus className="fixed bottom-4 left-4 h-6 w-6 text-border md:bottom-8 md:left-8" />
        <CornerPlus className="fixed bottom-4 right-4 h-6 w-6 text-border md:bottom-8 md:right-8" />
 
-      <header className="relative z-10 mb-12 flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
+      <header className="relative z-10 mb-8 flex flex-col justify-between gap-6 sm:mb-12 sm:gap-8 lg:flex-row lg:items-end">
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
-              <Activity className="h-4 w-4" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
+              <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
-            <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground sm:text-sm">
               System Status
             </span>
-            <div className="h-4 w-[1px] bg-border/60" />
+            <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
             <Link
               href="https://github.com/BingZi-233/check-cx"
               target="_blank"
-              className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-xs"
             >
-              <Github className="h-3.5 w-3.5" />
+              <Github className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               <span>GitHub</span>
             </Link>
-            <div className="h-4 w-[1px] bg-border/60" />
+            <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
             <ThemeToggle />
           </div>
           
-          <h1 className="max-w-2xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
+          <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
             AI SERVICES <br />
             <span className="text-muted-foreground">INTELLIGENCE MONITOR</span>
           </h1>
           
-          <div className="flex max-w-lg flex-col gap-2 text-muted-foreground">
+          <div className="flex max-w-lg flex-col gap-2 text-sm text-muted-foreground sm:text-base">
              <p className="leading-relaxed">
                实时追踪各大 AI 模型对话接口的可用性、延迟与官方服务状态。
                <br />
@@ -488,7 +641,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           </div>
         </div>
 
-        <div className="flex flex-col items-start gap-4 lg:items-end">
+        <div className="flex flex-col items-start gap-3 sm:gap-4 lg:items-end">
            {/* Status Pill */}
            <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-4 py-1.5 backdrop-blur-sm">
               <span className="relative flex h-2.5 w-2.5">
@@ -521,20 +674,38 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             <p className="text-muted-foreground">请配置检查端点以开始监控</p>
           </div>
         ) : hasMultipleGroups ? (
-          <div className="space-y-4">
-            {groupedTimelines.map((group) => (
-              <GroupPanel
-                key={group.groupName}
-                group={group}
-                timeToNextRefresh={timeToNextRefresh}
-                isCoarsePointer={isCoarsePointer}
-                activeOfficialCardId={activeOfficialCardId}
-                setActiveOfficialCardId={setActiveOfficialCardId}
-                gridColsClass={gridColsClass}
-                defaultOpen={false}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={orderedGroupNames}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-4">
+                {orderedGroupNames.map((groupName) => {
+                  const group = groupedTimelines.find(
+                    (g) => g.groupName === groupName
+                  );
+                  if (!group) return null;
+                  return (
+                    <SortableGroupPanel
+                      key={group.groupName}
+                      id={group.groupName}
+                      group={group}
+                      timeToNextRefresh={timeToNextRefresh}
+                      isCoarsePointer={isCoarsePointer}
+                      activeOfficialCardId={activeOfficialCardId}
+                      setActiveOfficialCardId={setActiveOfficialCardId}
+                      gridColsClass={gridColsClass}
+                      defaultOpen={false}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : (
           <div className={`grid gap-6 ${gridColsClass}`}>
             {providerTimelines.map((timeline) => (
