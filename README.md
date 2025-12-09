@@ -78,9 +78,26 @@ Check CX 是一套基于 **Next.js 16** + **shadcn/ui** 构建的现代化 AI �
 - 响应式设计,支持多屏幕尺寸
 - 适合大屏/TV 循环展示
 
+### 🔌 开放的状态 API
+
+- 提供 `/api/v1/status` RESTful API 端点
+- 支持按 `group` 和 `model` 参数筛选
+- 返回详细统计信息(成功率、平均/最小/最大延迟)
+- 包含完整的历史时间线数据
+- 便于第三方系统集成与自动化监控
+
+### 📢 系统通知功能
+
+- 支持 **多条通知自动轮播**（5秒切换）
+- 三种通知级别：`info`、`warning`、`error`
+- 支持 **Markdown 格式** 内容
+- 可设置通知起止时间，自动显示/隐藏
+- 用户可手动关闭通知横幅
+
 ### 🎨 现代化 UI 体验
 
 - 基于 **next-themes** 的深色/浅色主题切换
+- **页面导航进度条**,提升用户体验
 - 状态徽章优化,视觉效果更清晰
 - 统一的代码格式化风格
 - GitHub 仓库快速跳转链接
@@ -229,11 +246,21 @@ Check CX 使用 Supabase 的两张核心表:
 |------|------|------|
 | `id` | UUID | 主键,自动生成 |
 | `config_id` | UUID | 关联的配置 ID |
-| `status` | TEXT | 状态: `operational` / `degraded` / `failed` |
+| `status` | TEXT | 状态: `operational` / `degraded` / `failed` / `validation_failed` |
 | `latency_ms` | INTEGER | 响应延迟(毫秒) |
 | `ping_latency_ms` | INTEGER | 端点 Ping 延迟(毫秒) |
 | `checked_at` | TIMESTAMPTZ | 检测时间 |
 | `message` | TEXT | 错误信息(可选) |
+
+**`system_notifications` - 系统通知表**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUID | 主键,自动生成 |
+| `message` | TEXT | 通知内容(支持 Markdown) |
+| `is_active` | BOOLEAN | 是否启用 |
+| `level` | TEXT | 级别: `info` / `warning` / `error` |
+| `created_at` | TIMESTAMPTZ | 创建时间 |
 
 ### 数据库函数
 
@@ -411,6 +438,40 @@ SELECT name, type, model FROM check_configs WHERE is_maintenance = true;
 - 历史记录保留,恢复后继续累积
 - 适用于已知服务商维护、计划停机等场景
 
+### 系统通知管理
+
+通过 `system_notifications` 表可以发布全站公告,支持多条通知自动轮播。
+
+```sql
+-- 发布一条信息通知
+INSERT INTO system_notifications (message, level, is_active)
+VALUES ('系统将于今晚 22:00 进行维护,预计持续 30 分钟。', 'info', true);
+
+-- 发布警告通知（支持 Markdown 格式）
+INSERT INTO system_notifications (message, level, is_active)
+VALUES ('**注意**: 部分 API 响应延迟较高,我们正在排查中。', 'warning', true);
+
+-- 发布错误级别通知
+INSERT INTO system_notifications (message, level, is_active)
+VALUES ('OpenAI 服务商出现大面积故障,详情请查看 [官方状态页](https://status.openai.com)', 'error', true);
+
+-- 关闭通知
+UPDATE system_notifications
+SET is_active = false
+WHERE id = 'notification-uuid';
+
+-- 查看所有活跃通知
+SELECT * FROM system_notifications WHERE is_active = true ORDER BY created_at DESC;
+
+-- 删除通知
+DELETE FROM system_notifications WHERE id = 'notification-uuid';
+```
+
+**通知级别样式:**
+- `info`: 蓝色背景,信息图标
+- `warning`: 橙色背景,警告图标
+- `error`: 红色背景,错误图标
+
 ### 自定义请求头
 
 某些 API 端点可能对默认请求头有限制，可以通过 `request_header` 字段自定义多个请求头（JSON 格式）。
@@ -465,12 +526,15 @@ check-cx/
 │   │       └── page.tsx         # 分组详情页
 │   ├── api/
 │   │   ├── dashboard/           # Dashboard 数据 API
+│   │   ├── v1/
+│   │   │   └── status/          # 状态查询 API (对外开放)
 │   │   └── group/
 │   │       └── [groupName]/     # 分组数据 API
 │   └── layout.tsx               # 全局布局
 ├── components/                   # React 组件
 │   ├── dashboard-view.tsx       # Dashboard 主视图(含分组面板)
 │   ├── group-dashboard-view.tsx # 分组详情视图
+│   ├── notification-banner.tsx  # 系统通知横幅(多条轮播)
 │   ├── provider-icon.tsx        # Provider 图标组件
 │   └── ui/                      # shadcn/ui 组件
 ├── lib/                         # 核心库
@@ -489,7 +553,8 @@ check-cx/
 │   │   └── stream-check.ts     # 流式检查通用逻辑
 │   ├── database/                # 数据库操作
 │   │   ├── config-loader.ts    # 配置加载
-│   │   └── history.ts          # 历史记录管理
+│   │   ├── history.ts          # 历史记录管理
+│   │   └── notifications.ts    # 系统通知管理
 │   ├── types/                   # TypeScript 类型定义
 │   │   └── constants.ts         # 全局常量
 │   ├── utils/                   # 工具函数
@@ -605,6 +670,94 @@ pnpm db:types         # 生成 Supabase 类型定义
 
 - **禁用** (`enabled = false`): 配置完全不执行,不显示在 Dashboard 中
 - **维护模式** (`is_maintenance = true`): 配置仍显示在 Dashboard 中,但显示为"维护中"状态,不执行实际检测
+
+### 8. 如何发布系统通知?
+
+在 `system_notifications` 表中插入记录即可。支持三种级别(`info`/`warning`/`error`)和 Markdown 格式。多条活跃通知会自动轮播。
+
+## 状态查询 API
+
+Check CX 提供 `/api/v1/status` 端点，便于第三方系统集成。
+
+### 基本用法
+
+```bash
+# 获取所有 Provider 状态
+curl https://your-domain.com/api/v1/status
+
+# 按分组筛选
+curl https://your-domain.com/api/v1/status?group=主力服务商
+
+# 按模型筛选
+curl https://your-domain.com/api/v1/status?model=gpt-4o-mini
+
+# 组合筛选
+curl https://your-domain.com/api/v1/status?group=主力服务商&model=gpt-4o
+```
+
+### 响应结构
+
+```json
+{
+  "providers": [
+    {
+      "id": "uuid",
+      "name": "主力 OpenAI",
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "group": "主力服务商",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "latest": {
+        "status": "operational",
+        "latencyMs": 1234,
+        "pingLatencyMs": 50,
+        "checkedAt": "2025-12-09T12:00:00.000Z",
+        "message": ""
+      },
+      "statistics": {
+        "totalChecks": 60,
+        "operationalCount": 55,
+        "degradedCount": 3,
+        "failedCount": 2,
+        "validationFailedCount": 0,
+        "successRate": 96.67,
+        "avgLatencyMs": 1500,
+        "minLatencyMs": 800,
+        "maxLatencyMs": 3200
+      },
+      "timeline": [...]
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "operational": 8,
+    "degraded": 1,
+    "failed": 1,
+    "validationFailed": 0,
+    "maintenance": 0,
+    "avgLatencyMs": 1200
+  },
+  "metadata": {
+    "generatedAt": "2025-12-09T12:00:00.000Z",
+    "pollIntervalMs": 60000,
+    "pollIntervalLabel": "60 秒",
+    "filters": {
+      "group": null,
+      "model": null
+    }
+  }
+}
+```
+
+### 状态说明
+
+| 状态 | 说明 |
+|------|------|
+| `operational` | 正常运行,延迟 ≤ 6s |
+| `degraded` | 响应缓慢,延迟 > 6s |
+| `failed` | 请求失败或超时 |
+| `validation_failed` | 响应验证失败 |
+| `maintenance` | 维护模式中 |
 
 ## 技术栈
 
