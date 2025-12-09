@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils/cn";
 export function NotificationBanner() {
   const [notifications, setNotifications] = useState<SystemNotificationRow[]>([]);
   const [visible, setVisible] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     async function fetchNotifications() {
@@ -20,13 +21,21 @@ export function NotificationBanner() {
     fetchNotifications();
   }, []);
 
+  useEffect(() => {
+    if (notifications.length <= 1) return;
+
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % notifications.length);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [notifications.length]);
+
   if (!visible || notifications.length === 0) {
     return null;
   }
 
-  // 只显示最新的那一条，或者可以根据需求改成显示多条。
-  // 这里简化处理：循环显示或者只显示第一条。为了界面整洁，这里只显示第一条。
-  const notification = notifications[0];
+  const notification = notifications[currentIndex];
 
   const levelStyles = {
     info: "bg-blue-50/90 text-blue-900 border-blue-200 dark:bg-blue-950/50 dark:text-blue-100 dark:border-blue-800",
