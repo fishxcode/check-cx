@@ -14,7 +14,7 @@
  * 5. 延迟测量和状态判定
  */
 
-import { streamText, type JSONValue } from "ai";
+import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -183,85 +183,50 @@ function parseModelDirective(model: string): {
 }
 
 /**
- * 创建自定义 fetch 函数的配置
+ * 过滤 metadata 中与 SDK 冲突的字段
  */
-interface CustomFetchOptions {
-  /** 要注入到请求体的额外参数 */
-  metadata?: Record<string, unknown>;
-  /** 强制覆盖的请求头（会覆盖 SDK 自动添加的内容） */
-  overrideHeaders?: Record<string, string>;
+function filterMetadata(
+  metadata: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  if (!metadata) return null;
+
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!EXCLUDED_KEYS.has(key)) {
+      filtered[key] = value;
+    }
+  }
+  return Object.keys(filtered).length > 0 ? filtered : null;
 }
 
 /**
  * 创建自定义 fetch 函数
  *
- * 通过自定义 fetch 函数拦截 SDK 的请求：
- * 1. 将 metadata 直接合并到请求体中（仅过滤冲突字段）
- * 2. 强制覆盖请求头，避免 SDK 自动附加的内容（如 User-Agent 后缀）
- *
- * @param options - 配置选项
- * @returns 自定义的 fetch 函数
+ * 拦截 SDK 请求以注入 metadata 到请求体并覆盖请求头
  */
 function createCustomFetch(
-  options: CustomFetchOptions
-): typeof fetch | undefined {
-  const { metadata, overrideHeaders } = options;
-
-  // 过滤掉会与 SDK 冲突的字段，其他字段直接透传
-  const injectableParams: Record<string, unknown> = {};
-  if (metadata) {
-    for (const [key, value] of Object.entries(metadata)) {
-      // 只跳过会导致冲突的字段
-      if (EXCLUDED_KEYS.has(key)) {
-        continue;
-      }
-      injectableParams[key] = value;
-    }
-  }
-
-  const hasInjectableParams = Object.keys(injectableParams).length > 0;
-  const hasOverrideHeaders =
-    overrideHeaders && Object.keys(overrideHeaders).length > 0;
-
-  // 如果没有任何自定义需求，使用原生 fetch
-  if (!hasInjectableParams && !hasOverrideHeaders) {
-    return undefined;
-  }
-
-  // 返回自定义 fetch 函数
+  metadata: Record<string, unknown> | null,
+  headers: Record<string, string>
+): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    // 只处理 POST 请求（API 调用）
-    if (init?.method?.toUpperCase() === "POST" && init.body) {
-      try {
-        // 解析原始请求体
-        const originalBody =
-          typeof init.body === "string" ? JSON.parse(init.body) : init.body;
-
-        // 合并 metadata 参数到请求体
-        const mergedBody = hasInjectableParams
-          ? { ...originalBody, ...injectableParams }
-          : originalBody;
-
-        // 构建最终的请求头
-        // SDK 传入的 headers 作为基础，然后用 overrideHeaders 强制覆盖
-        const finalHeaders = hasOverrideHeaders
-          ? { ...(init.headers as Record<string, string>), ...overrideHeaders }
-          : init.headers;
-
-        // 使用修改后的请求发送
-        return fetch(input, {
-          ...init,
-          headers: finalHeaders,
-          body: JSON.stringify(mergedBody),
-        });
-      } catch {
-        // JSON 解析失败，使用原始请求
-        return fetch(input, init);
-      }
+    // 非 POST 请求直接透传
+    if (init?.method?.toUpperCase() !== "POST" || !init.body) {
+      return fetch(input, { ...init, headers: { ...init?.headers as Record<string, string>, ...headers } });
     }
 
-    // 非 POST 请求直接透传
-    return fetch(input, init);
+    try {
+      const originalBody =
+        typeof init.body === "string" ? JSON.parse(init.body) : init.body;
+      const mergedBody = metadata ? { ...originalBody, ...metadata } : originalBody;
+
+      return fetch(input, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string>), ...headers },
+        body: JSON.stringify(mergedBody),
+      });
+    } catch {
+      return fetch(input, init);
+    }
   };
 }
 
@@ -288,28 +253,19 @@ function createModel(config: ProviderConfig) {
   // 解析模型名称，提取可能的推理强度指令
   const { modelId, reasoningEffort } = parseModelDirective(config.model);
 
-  // 构建通用请求头
-  // 包含默认的 User-Agent 和用户自定义的请求头
+  // 构建请求头和自定义 fetch
   const headers: Record<string, string> = {
     "User-Agent": "check-cx/0.1.0",
-    ...(config.requestHeaders || {}),
+    ...config.requestHeaders,
   };
-
-  // 创建自定义 fetch 函数
-  // 1. 注入 metadata 到请求体
-  // 2. 强制覆盖请求头（避免 SDK 自动附加 User-Agent 后缀）
-  const customFetch = createCustomFetch({
-    metadata: config.metadata ?? undefined,
-    overrideHeaders: headers,
-  });
+  const filteredMetadata = filterMetadata(config.metadata);
+  const customFetch = createCustomFetch(filteredMetadata, headers);
 
   switch (config.type) {
     case "openai": {
-      // 创建 OpenAI SDK 实例
       const provider = createOpenAI({
         apiKey: config.apiKey,
         baseURL,
-        headers,
         fetch: customFetch,
       });
 
@@ -332,11 +288,9 @@ function createModel(config: ProviderConfig) {
     }
 
     case "anthropic": {
-      // 创建 Anthropic SDK 实例
       const provider = createAnthropic({
         apiKey: config.apiKey,
         baseURL,
-        headers,
         fetch: customFetch,
       });
       // Anthropic 不支持 reasoning_effort 参数
@@ -348,13 +302,10 @@ function createModel(config: ProviderConfig) {
     }
 
     case "gemini": {
-      // Gemini 使用 OpenAI 兼容模式
-      // 通过 @ai-sdk/openai-compatible 适配
       const provider = createOpenAICompatible({
         name: "gemini",
         apiKey: config.apiKey,
         baseURL,
-        headers,
         fetch: customFetch,
       });
       // Gemini 不支持 reasoning_effort 参数
@@ -448,12 +399,6 @@ function buildCheckResult(
 
 /**
  * 打印调试日志
- *
- * @param config - Provider 配置
- * @param prompt - 挑战题目
- * @param response - 模型回复
- * @param expectedAnswer - 期望答案
- * @param isValid - 验证是否通过（null 表示空回复）
  */
 function logCheckResult(
   config: ProviderConfig,
@@ -470,136 +415,90 @@ function logCheckResult(
 }
 
 /**
- * 构建 OpenAI 推理模型的 providerOptions
- *
- * 仅用于传递 reasoning_effort 参数，其他 provider 特定参数
- * 已通过 fetch 函数注入到请求体中。
- *
- * @param providerType - Provider 类型
- * @param reasoningEffort - 推理强度（仅 OpenAI）
- * @returns providerOptions 对象，如果不需要则返回 undefined
- */
-function buildReasoningOptions(
-  providerType: string,
-  reasoningEffort?: ReasoningEffort
-): Record<string, Record<string, JSONValue>> | undefined {
-  // 只有 OpenAI 推理模型需要 providerOptions
-  if (!reasoningEffort || providerType !== "openai") {
-    return undefined;
-  }
-
-  return {
-    openai: { reasoningEffort },
-  };
-}
-
-/**
  * 统一的 AI Provider 健康检查函数
- *
- * 这是本模块的核心函数，执行以下步骤：
- * 1. 创建对应 Provider 的 SDK 模型实例
- * 2. 生成数学挑战题（如 "3 + 5 = ?"）
- * 3. 发送流式请求并收集完整回复
- * 4. 验证回复是否包含正确答案
- * 5. 根据响应时间判定健康状态
  *
  * 健康状态判定规则：
  * - operational: 请求成功且延迟 ≤ 6000ms
  * - degraded: 请求成功但延迟 > 6000ms
  * - validation_failed: 收到回复但答案验证失败
  * - failed: 请求失败、超时或回复为空
- *
- * @param config - Provider 配置对象
- * @returns 检查结果，包含状态、延迟、消息等信息
  */
 export async function checkWithAiSdk(
   config: ProviderConfig
 ): Promise<CheckResult> {
-  // 创建超时控制器
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const startedAt = Date.now();
 
-  // 准备基础参数
   const displayEndpoint = config.endpoint || DEFAULT_ENDPOINTS[config.type];
   const pingPromise = measureEndpointPing(displayEndpoint);
   const challenge = generateChallenge();
 
-  // 构建结果的基础参数（pingLatencyMs 后续填充）
-  const getResultBase = async (): Promise<ResultBuilderBase> => ({
+  // 辅助函数：构建结果基础参数
+  const makeBase = async (): Promise<ResultBuilderBase> => ({
     config,
     endpoint: displayEndpoint,
     pingLatencyMs: await pingPromise,
   });
 
   try {
-    // 创建 AI SDK 模型实例（metadata 通过 fetch 函数直接合并到请求体）
     const { model, reasoningEffort } = createModel(config);
 
-    // 构建 OpenAI 推理模型的 providerOptions
-    const providerOptions = buildReasoningOptions(config.type, reasoningEffort);
+    // 内联 providerOptions 构建（仅 OpenAI 推理模型需要）
+    const providerOptions =
+      reasoningEffort && config.type === "openai"
+        ? { openai: { reasoningEffort } }
+        : undefined;
 
-    // 构建请求参数
-    const streamParams: Parameters<typeof streamText>[0] = {
+    const result = streamText({
       model,
       prompt: challenge.prompt,
       abortSignal: controller.signal,
-      ...(providerOptions ? { providerOptions } : {}),
-    };
+      ...(providerOptions && { providerOptions }),
+    });
 
-    // 执行流式请求并收集响应
-    const result = streamText(streamParams);
     let collectedResponse = "";
     for await (const chunk of result.textStream) {
       collectedResponse += chunk;
     }
 
     const latencyMs = Date.now() - startedAt;
-    const base = await getResultBase();
+    const base = await makeBase();
 
-    // 检查空回复
+    // 空回复
     if (!collectedResponse.trim()) {
       logCheckResult(config, challenge.prompt, "", challenge.expectedAnswer, null);
       return buildCheckResult(base, "failed", latencyMs, "回复为空");
     }
 
     // 验证答案
-    const validationResult = validateResponse(
+    const { valid, extractedNumbers } = validateResponse(
       collectedResponse,
       challenge.expectedAnswer
     );
-    logCheckResult(
-      config,
-      challenge.prompt,
-      collectedResponse,
-      challenge.expectedAnswer,
-      validationResult.valid
-    );
+    logCheckResult(config, challenge.prompt, collectedResponse, challenge.expectedAnswer, valid);
 
-    // 验证失败
-    if (!validationResult.valid) {
-      const extractedAnswer =
-        validationResult.extractedNumbers?.join(", ") || "(无数字)";
+    if (!valid) {
       return buildCheckResult(
         base,
         "validation_failed",
         latencyMs,
-        `回复验证失败: 期望 ${challenge.expectedAnswer}, 实际: ${extractedAnswer}`
+        `回复验证失败: 期望 ${challenge.expectedAnswer}, 实际: ${extractedNumbers?.join(", ") || "(无数字)"}`
       );
     }
 
     // 判定健康状态
     const status: HealthStatus =
       latencyMs <= DEGRADED_THRESHOLD_MS ? "operational" : "degraded";
-    const message =
-      status === "degraded"
-        ? `响应成功但耗时 ${latencyMs}ms`
-        : `验证通过 (${latencyMs}ms)`;
 
-    return buildCheckResult(base, status, latencyMs, message);
+    return buildCheckResult(
+      base,
+      status,
+      latencyMs,
+      status === "degraded" ? `响应成功但耗时 ${latencyMs}ms` : `验证通过 (${latencyMs}ms)`
+    );
   } catch (error) {
-    const base = await getResultBase();
-    return buildCheckResult(base, "failed", null, getErrorMessage(error as Error));
+    return buildCheckResult(await makeBase(), "failed", null, getErrorMessage(error as Error));
   } finally {
     clearTimeout(timeout);
   }
