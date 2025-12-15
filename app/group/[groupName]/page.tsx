@@ -35,8 +35,8 @@ export default async function GroupPage({ params }: GroupPageProps) {
   }
 
   return (
-    <div className="min-h-screen py-12 md:py-16">
-      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 sm:px-6 lg:px-12">
+    <div className="min-h-screen py-8 md:py-16">
+      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 sm:gap-8 sm:px-6 lg:px-12">
         {/* 返回首页链接 */}
         <Link
           href="/"

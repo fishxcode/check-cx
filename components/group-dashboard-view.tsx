@@ -81,27 +81,31 @@ function ProviderCard({
       <CornerPlus className="left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
       <CornerPlus className="right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
       
-      <div className="flex-1 p-5">
+      <div className="flex-1 p-4 sm:p-5">
         <div className="mb-4 flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10">
-              <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10 sm:h-12 sm:w-12 sm:rounded-2xl">
+              <div className="scale-75 sm:scale-100">
+                <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold leading-none tracking-tight text-foreground">
-                {latest.name}
-              </h3>
-              <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                 <span className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                 <h3 className="flex-1 truncate text-base font-bold leading-none tracking-tight text-foreground sm:text-lg">
+                   {latest.name}
+                 </h3>
+                 <Badge variant={preset.badge} className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-xs">
+                   {preset.label}
+                 </Badge>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
                   {PROVIDER_LABEL[latest.type]}
                 </span>
-                <span className="font-mono opacity-60">{latest.model}</span>
+                <span className="break-all font-mono opacity-60">{latest.model}</span>
               </div>
             </div>
           </div>
-          <Badge variant={preset.badge} className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md">
-            {preset.label}
-          </Badge>
         </div>
 
         <div className="mb-4 grid grid-cols-2 gap-3">
@@ -324,9 +328,9 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
   // 根据卡片数量决定宽屏列数
   const gridColsClass = useMemo(() => {
     if (total > 4) {
-      return "grid-cols-1 lg:grid-cols-2 xl:grid-cols-3";
+      return "grid-cols-1 md:grid-cols-2 xl:grid-cols-3";
     }
-    return "grid-cols-1 lg:grid-cols-2";
+    return "grid-cols-1 md:grid-cols-2";
   }, [total]);
 
   // 计算状态统计
@@ -348,19 +352,19 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
       <CornerPlus className="fixed bottom-4 left-4 h-6 w-6 text-border md:bottom-8 md:left-8" />
       <CornerPlus className="fixed bottom-4 right-4 h-6 w-6 text-border md:bottom-8 md:right-8" />
 
-      <header className="relative z-10 mb-12 flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
+      <header className="relative z-10 mb-8 flex flex-col justify-between gap-6 sm:mb-12 sm:gap-8 lg:flex-row lg:items-end">
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
-              <Activity className="h-4 w-4" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
+              <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
-            <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground sm:text-sm">
               Group View
             </span>
           </div>
           
           <div className="flex items-center gap-3">
-            <h1 className="max-w-2xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
+            <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
               {displayName}
             </h1>
             {data.websiteUrl && (
