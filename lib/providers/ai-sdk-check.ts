@@ -195,7 +195,11 @@ function createCustomFetch(
   headers: Record<string, string>
 ): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    const mergedHeaders = { ...(init?.headers as Record<string, string>), ...headers };
+    // 使用 Headers API 确保用户 headers 完全覆盖 SDK headers
+    const mergedHeaders = new Headers(init?.headers);
+    for (const [key, value] of Object.entries(headers)) {
+      mergedHeaders.set(key, value); // set 会覆盖，append 会追加
+    }
 
     // 非 POST 请求或无 body 时，仅注入 headers
     if (init?.method?.toUpperCase() !== "POST" || !init.body) {
