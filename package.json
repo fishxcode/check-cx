@@ -1,6 +1,6 @@
 {
   "name": "check-cx",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -34,6 +34,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",
+    "recharts": "^3.6.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0"
   },
