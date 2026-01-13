@@ -10,6 +10,8 @@ import {
   GripVertical,
   Radio,
   RefreshCcw,
+  Search,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -420,6 +422,7 @@ function GroupPanel({
 export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const lockRef = useRef(false);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
     computeRemainingMs(
@@ -609,6 +612,19 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     );
   }, [groupedTimelines]);
 
+  // Filter groups based on search query
+  const filteredGroupNames = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return orderedGroupNames;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return orderedGroupNames.filter((groupName) => {
+      const group = groupedTimelines.find((g) => g.groupName === groupName);
+      if (!group) return false;
+      return group.displayName.toLowerCase().includes(query);
+    });
+  }, [orderedGroupNames, groupedTimelines, searchQuery]);
+
   return (
     <div className="relative">
        {/* Corner decorative markers for the main container */}
@@ -654,6 +670,29 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         </div>
 
         <div className="flex flex-col items-start gap-3 sm:gap-4 lg:items-end">
+           {/* Search Box - only show when multiple groups exist */}
+           {hasMultipleGroups && (
+             <div className="relative w-full sm:w-64">
+               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+               <input
+                 type="text"
+                 placeholder="搜索分组..."
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className="h-10 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+               />
+               {searchQuery && (
+                 <button
+                   type="button"
+                   onClick={() => setSearchQuery("")}
+                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                 >
+                   <X className="h-4 w-4" />
+                 </button>
+               )}
+             </div>
+           )}
+
            {/* Status Pill */}
            <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-4 py-1.5 backdrop-blur-sm">
               <span className="relative flex h-2.5 w-2.5">
@@ -692,30 +731,47 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={orderedGroupNames}
+              items={filteredGroupNames}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-4">
-                {orderedGroupNames.map((groupName) => {
-                  const group = groupedTimelines.find(
-                    (g) => g.groupName === groupName
-                  );
-                  if (!group) return null;
-                  return (
-                    <SortableGroupPanel
-                      key={group.groupName}
-                      id={group.groupName}
-                      group={group}
-                      timeToNextRefresh={timeToNextRefresh}
-                      isCoarsePointer={isCoarsePointer}
-                      activeOfficialCardId={activeOfficialCardId}
-                      setActiveOfficialCardId={setActiveOfficialCardId}
-                      gridColsClass={gridColsClass}
-                      defaultOpen={false}
-                    />
-                  );
-                })}
-              </div>
+              {filteredGroupNames.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
+                  <div className="mb-4 rounded-full bg-muted/50 p-4">
+                    <Search className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold">没有找到匹配的分组</h3>
+                  <p className="text-muted-foreground">尝试使用其他关键词搜索</p>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="mt-4 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+                  >
+                    清除搜索
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredGroupNames.map((groupName) => {
+                    const group = groupedTimelines.find(
+                      (g) => g.groupName === groupName
+                    );
+                    if (!group) return null;
+                    return (
+                      <SortableGroupPanel
+                        key={group.groupName}
+                        id={group.groupName}
+                        group={group}
+                        timeToNextRefresh={timeToNextRefresh}
+                        isCoarsePointer={isCoarsePointer}
+                        activeOfficialCardId={activeOfficialCardId}
+                        setActiveOfficialCardId={setActiveOfficialCardId}
+                        gridColsClass={gridColsClass}
+                        defaultOpen={false}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </SortableContext>
           </DndContext>
         ) : (
