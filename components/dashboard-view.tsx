@@ -502,7 +502,10 @@ export function DashboardView({ initialData }: DashboardViewProps) {
 
   // Filter and sort groups based on search query and sort mode
   const filteredGroupNames = useMemo(() => {
-    let result = orderedGroupNames;
+    let result =
+      sortMode === "custom"
+        ? orderedGroupNames
+        : groupedTimelines.map((g) => g.groupName);
 
     // Filter by search query
     if (searchQuery.trim()) {
@@ -584,7 +587,8 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           selectedPeriod,
           defaultOpen: false,
         };
-        return isDndReady ? (
+        // Only enable drag-and-drop in custom sort mode
+        return isDndReady && sortMode === "custom" ? (
           <SortableGroupPanel
             key={group.groupName}
             id={group.groupName}
@@ -756,7 +760,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             <p className="text-muted-foreground">请配置检查端点以开始监控</p>
           </div>
         ) : hasMultipleGroups ? (
-          isDndReady ? (
+          isDndReady && sortMode === "custom" ? (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
