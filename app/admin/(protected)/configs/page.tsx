@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Pencil, Trash2, Plus, Settings, RefreshCw, Play, Loader2, Copy } from "lucide-react";
+import { Pencil, Trash2, Plus, Settings, RefreshCw, Play, Loader2, Copy, PlayCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { ProviderIcon } from "@/components/provider-icon";
 import { CrudDialog } from "@/components/admin/crud-dialog";
@@ -50,6 +50,8 @@ export default function ConfigsPage() {
   const [msg, setMsg]                 = useState("");
   const [testLoading, setTestLoading] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  const [selected, setSelected]       = useState<Set<string>>(new Set());
+  const [batchRunning, setBatchRunning] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/configs");
@@ -160,6 +162,31 @@ export default function ConfigsPage() {
     }
   }
 
+  async function runBatchTest() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBatchRunning(true);
+    await Promise.all(ids.map((id) => runTest(id)));
+    setBatchRunning(false);
+  }
+
+  const pageRows = configs.slice((page - 1) * pageSize, page * pageSize);
+  const pageIds = pageRows.map((r) => r.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const somePageSelected = pageIds.some((id) => selected.has(id));
+
+  function toggleSelectAll() {
+    if (allPageSelected) {
+      setSelected((prev) => { const next = new Set(prev); pageIds.forEach((id) => next.delete(id)); return next; });
+    } else {
+      setSelected((prev) => { const next = new Set(prev); pageIds.forEach((id) => next.add(id)); return next; });
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -176,11 +203,46 @@ export default function ConfigsPage() {
         </div>
       </div>
 
+      {/* 批量操作栏 */}
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm font-medium">已选 {selected.size} 条</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+            >
+              取消选择
+            </button>
+            <button
+              onClick={runBatchTest}
+              disabled={batchRunning}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-all"
+            >
+              {batchRunning
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <PlayCircle className="h-3.5 w-3.5" />
+              }
+              批量检测
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
+                <th className="w-10 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    ref={(el) => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
+                    onChange={toggleSelectAll}
+                    className="h-3.5 w-3.5 cursor-pointer accent-primary"
+                  />
+                </th>
                 <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">名称</th>
                 <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">类型</th>
                 <th className="hidden sm:table-cell px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">模型</th>
@@ -193,11 +255,20 @@ export default function ConfigsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {configs.slice((page - 1) * pageSize, page * pageSize).map((row) => {
+              {pageRows.map((row) => {
                 const tr = testResults[row.id];
                 const tl = testLoading[row.id];
+                const isSelected = selected.has(row.id);
                 return (
-                  <tr key={row.id} className="group hover:bg-muted/30 transition-colors">
+                  <tr key={row.id} className={`group hover:bg-muted/30 transition-colors ${isSelected ? "bg-primary/5" : ""}`}>
+                    <td className="w-10 px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(row.id)}
+                        className="h-3.5 w-3.5 cursor-pointer accent-primary"
+                      />
+                    </td>
                     <td className="px-3 py-2.5 font-medium">{row.name}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5">
@@ -217,7 +288,6 @@ export default function ConfigsPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5">
-                        {/* 测试结果 */}
                         {tr && (
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${TEST_STATUS_STYLES[tr.status] ?? "bg-muted text-muted-foreground"}`}
@@ -227,7 +297,6 @@ export default function ConfigsPage() {
                             {tr.latencyMs != null && <span className="opacity-70">{tr.latencyMs}ms</span>}
                           </span>
                         )}
-                        {/* 操作按钮（hover 显示） */}
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => runTest(row.id)}
@@ -235,10 +304,7 @@ export default function ConfigsPage() {
                             className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
                             title="即时测试"
                           >
-                            {tl
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <Play className="h-3.5 w-3.5" />
-                            }
+                            {tl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                           </button>
                           <button onClick={() => openEdit(row)} className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                             <Pencil className="h-3.5 w-3.5" />
