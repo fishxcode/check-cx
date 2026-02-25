@@ -317,7 +317,7 @@ export default function ConfigsPage() {
                             {tr.latencyMs != null && <span className="opacity-70">{tr.latencyMs}ms</span>}
                           </span>
                         )}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                           <button onClick={() => runTest(row.id)} disabled={tl} className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-muted transition-colors disabled:opacity-50" title="即时测试">
                             {tl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                           </button>

@@ -152,7 +152,7 @@ export default function ChannelsPage() {
                   {new Date(row.created_at).toLocaleString("zh-CN")}
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                     <button onClick={() => openEdit(row)} className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted">
                       <Pencil className="h-3.5 w-3.5" />
                     </button>

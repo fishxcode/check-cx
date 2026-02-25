@@ -196,7 +196,7 @@ export default function AlertHistoryPage() {
                     <td className="px-3 py-2">
                       <button
                         onClick={() => setDetailRow(row)}
-                        className="rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all"
+                        className="rounded p-1 text-muted-foreground sm:opacity-0 sm:group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all"
                         title="查看详情"
                       >
                         <Eye className="h-3.5 w-3.5" />

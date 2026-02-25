@@ -69,7 +69,7 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{setting.value ?? "—"}</code>
             <button
               onClick={() => { setDraft(setting.value ?? ""); setEditing(true); }}
-              className="opacity-0 group-hover:opacity-100 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+              className="sm:opacity-0 sm:group-hover:opacity-100 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
             >
               <Pencil className="h-3 w-3" />
             </button>

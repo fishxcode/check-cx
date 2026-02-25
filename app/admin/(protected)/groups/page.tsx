@@ -233,7 +233,7 @@ export default function GroupsPage() {
                             <span className="text-red-600">{tr.failed}</span>
                           </span>
                         )}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                           <button
                             onClick={() => runGroupTest(row.group_name)}
                             disabled={tl}
