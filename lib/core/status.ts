@@ -81,4 +81,5 @@ export const PROVIDER_LABEL: Record<ProviderType, string> = {
   openai: "OpenAI",
   gemini: "Gemini",
   anthropic: "Anthropic",
+  grok: "Grok",
 };

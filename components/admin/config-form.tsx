@@ -47,6 +47,7 @@ export function ConfigForm({ data, onChange, isEdit, groups }: ConfigFormProps) 
               <SelectItem value="openai">OpenAI</SelectItem>
               <SelectItem value="gemini">Gemini</SelectItem>
               <SelectItem value="anthropic">Anthropic</SelectItem>
+              <SelectItem value="grok">Grok</SelectItem>
             </SelectContent>
           </Select>
         </div>

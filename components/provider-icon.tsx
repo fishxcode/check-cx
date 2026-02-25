@@ -1,6 +1,6 @@
 "use client";
 
-import {Anthropic, Gemini, OpenAI} from "@lobehub/icons";
+import {Anthropic, Gemini, Grok, OpenAI} from "@lobehub/icons";
 
 import type {ProviderType} from "@/lib/types";
 import {cn} from "@/lib/utils";
@@ -12,6 +12,7 @@ const ICON_MAP: Record<
   openai: OpenAI,
   gemini: Gemini,
   anthropic: Anthropic,
+  grok: Grok,
 };
 
 interface ProviderIconProps {

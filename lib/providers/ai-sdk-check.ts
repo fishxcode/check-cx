@@ -328,6 +328,16 @@ function createModel(config: ProviderConfig) {
       }
     }
 
+    case "grok": {
+      const provider = createOpenAICompatible({
+        name: "grok",
+        apiKey: config.apiKey,
+        baseURL,
+        fetch: customFetch,
+      });
+      return { model: provider(modelId), reasoningEffort, isResponses: false };
+    }
+
     default:
       throw new Error(`不支持的 Provider 类型: ${config.type}`);
   }
