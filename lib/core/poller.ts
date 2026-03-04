@@ -11,6 +11,7 @@ import {getLastPingStartedAt, getPollerTimer, setLastPingStartedAt, setPollerTim
 import {startOfficialStatusPoller} from "./official-status-poller";
 import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
 import {evaluateAlerts} from "./alert-engine";
+import {sendPollSummary} from "./poll-summary";
 import {refreshSiteSettings} from "./site-settings";
 import type {HealthStatus} from "../types";
 
@@ -98,6 +99,9 @@ async function tick() {
     await Promise.allSettled(
       results.map((r) => evaluateAlerts(r.id, r.name, r.status, r.latencyMs ?? null))
     );
+
+    // 汇总推送
+    await sendPollSummary(results).catch((e) => console.error("[check-cx] 汇总推送失败", e));
 
     const statusCounts: Record<HealthStatus, number> = {
       operational: 0,

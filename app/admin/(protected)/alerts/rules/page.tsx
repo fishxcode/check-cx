@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Pencil, Trash2, Plus, Zap, MoreHorizontal } from "lucide-react";
+import { Pencil, Trash2, Plus, Zap, MoreHorizontal, Send, Bell } from "lucide-react";
+import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { CrudDialog } from "@/components/admin/crud-dialog";
 import { Pagination } from "@/components/admin/pagination";
@@ -78,16 +79,25 @@ export default function RulesPage() {
   const [form, setForm] = useState<RuleForm>(defaultForm());
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [summaryIds, setSummaryIds] = useState<string[]>([]);
+  const [summarySaving, setSummarySaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [rRes, cRes, cfRes] = await Promise.all([
+    const [rRes, cRes, cfRes, sRes] = await Promise.all([
       fetch("/api/admin/alerts/rules"),
       fetch("/api/admin/alerts/channels"),
       fetch("/api/admin/configs"),
+      fetch("/api/admin/settings"),
     ]);
     if (rRes.ok) setRules(await rRes.json());
     if (cRes.ok) setChannels(await cRes.json());
     if (cfRes.ok) setConfigs(await cfRes.json());
+    if (sRes.ok) {
+      const settings: Array<{ key: string; value: string | null }> = await sRes.json();
+      const raw = settings.find((s) => s.key === "alert.summary_channel_ids")?.value ?? "[]";
+      try { setSummaryIds(JSON.parse(raw)); } catch { setSummaryIds([]); }
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -135,6 +145,36 @@ export default function RulesPage() {
     else { const d = await res.json(); setMsg(d.error ?? "操作失败"); }
   }
 
+  async function handleTest(row: RuleRow) {
+    setTestingId(row.id);
+    try {
+      const res = await fetch(`/api/admin/alerts/rules/${row.id}/test`, { method: "POST" });
+      const d = await res.json();
+      if (d.ok) {
+        toast.success(`「${row.name}」测试成功（${d.results.length} 个渠道均已送达）`);
+      } else {
+        const failed = d.results.filter((r: { ok: boolean; name: string; error?: string }) => !r.ok);
+        toast.error(`部分渠道发送失败：${failed.map((f: { name: string }) => f.name).join("、")}`);
+      }
+    } catch {
+      toast.error("请求失败，请检查网络");
+    } finally {
+      setTestingId(null);
+    }
+  }
+
+  async function handleSaveSummary() {
+    setSummarySaving(true);
+    const res = await fetch("/api/admin/settings/alert.summary_channel_ids", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: JSON.stringify(summaryIds) }),
+    });
+    setSummarySaving(false);
+    if (res.ok) toast.success("汇总通知配置已保存");
+    else toast.error("保存失败");
+  }
+
   async function handleDelete(id: string) {
     await fetch(`/api/admin/alerts/rules/${id}`, { method: "DELETE" });
     setDeleteId(null);
@@ -157,6 +197,44 @@ export default function RulesPage() {
         <button onClick={openCreate} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90">
           <Plus className="h-4 w-4" />新建规则
         </button>
+      </div>
+
+      {/* 汇总通知配置 */}
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="border-b border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
+          <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">每轮汇总通知</p>
+          <span className="ml-1 text-xs text-muted-foreground">— 每次轮询结束后，将检测结果汇总推送到以下渠道</span>
+        </div>
+        <div className="p-4">
+          {channels.length === 0 ? (
+            <p className="text-xs text-muted-foreground">暂无渠道，请先在「告警渠道」页面创建</p>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {channels.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer rounded-lg border border-input px-3 py-1.5 hover:bg-muted/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={summaryIds.includes(c.id)}
+                    onChange={() => setSummaryIds((prev) =>
+                      prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]
+                    )}
+                    className="rounded"
+                  />
+                  <span className="text-sm">{c.name}</span>
+                  <span className="text-xs text-muted-foreground">{c.type}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={handleSaveSummary}
+            disabled={summarySaving}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {summarySaving ? "保存中…" : "保存配置"}
+          </button>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border overflow-hidden">
@@ -193,6 +271,13 @@ export default function RulesPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openEdit(row)}>
                         <Pencil className="h-3.5 w-3.5" />编辑
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleTest(row)}
+                        disabled={testingId === row.id}
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {testingId === row.id ? "发送中…" : "测试推送"}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setDeleteId(row.id)} className="text-destructive focus:text-destructive">
