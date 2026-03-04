@@ -12,12 +12,13 @@ const DEFAULT_PERIOD: AvailabilityPeriod = "7d";
 
 export function DashboardBootstrap() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [siteConfig, setSiteConfig] = useState<Awaited<ReturnType<typeof getSiteConfig>> | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadData = useCallback(async (forceFresh?: boolean) => {
     try {
       // 并行加载站点配置和 Dashboard 数据
-      const [_, result] = await Promise.all([
+      const [config, result] = await Promise.all([
         getSiteConfig(forceFresh),
         fetchWithCache({
           trendPeriod: DEFAULT_PERIOD,
@@ -29,6 +30,7 @@ export function DashboardBootstrap() {
         }),
       ]);
       setErrorMessage(null);
+      setSiteConfig(config);
       setData(result.data);
     } catch (error) {
       console.error("[check-cx] 首屏加载失败", error);
@@ -40,19 +42,23 @@ export function DashboardBootstrap() {
     let isActive = true;
     const run = async () => {
       try {
-        const result = await fetchWithCache({
-          trendPeriod: DEFAULT_PERIOD,
-          revalidateIfFresh: true,
-          onBackgroundUpdate: (nextData) => {
-            if (isActive) {
-              setData(nextData);
-            }
-          },
-        });
+        const [config, result] = await Promise.all([
+          getSiteConfig(),
+          fetchWithCache({
+            trendPeriod: DEFAULT_PERIOD,
+            revalidateIfFresh: true,
+            onBackgroundUpdate: (nextData) => {
+              if (isActive) {
+                setData(nextData);
+              }
+            },
+          }),
+        ]);
         if (!isActive) {
           return;
         }
         setErrorMessage(null);
+        setSiteConfig(config);
         setData(result.data);
       } catch (error) {
         if (!isActive) {
@@ -90,5 +96,5 @@ export function DashboardBootstrap() {
     );
   }
 
-  return <DashboardView initialData={data} />;
+  return <DashboardView initialData={data} siteConfig={siteConfig} />;
 }

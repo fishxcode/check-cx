@@ -45,6 +45,7 @@ import type {
   GroupedProviderTimelines,
   GroupInfoSummary,
 } from "@/lib/types";
+import type { SiteConfig } from "@/lib/utils/site-config-cache";
 import { UNGROUPED_DISPLAY_NAME } from "@/lib/types";
 import {cn} from "@/lib/utils";
 import {parseTagList, getTagColorClass} from "@/lib/utils/tag-colors";
@@ -52,6 +53,8 @@ import {parseTagList, getTagColorClass} from "@/lib/utils/tag-colors";
 interface DashboardViewProps {
   /** 首屏由服务端注入的聚合数据，用作前端轮询的初始快照 */
   initialData: DashboardData;
+  /** 站点配置（标题、描述、GitHub 链接等） */
+  siteConfig?: SiteConfig | null;
 }
 
 /** 计算所有 Provider 中最近一次检查的时间戳（毫秒） */
@@ -336,7 +339,7 @@ function GroupPanel({
  * - 负责渲染整体头部统计与 Provider 卡片
  * - 在浏览器端按 pollIntervalMs 定时拉取 /api/dashboard 并维护倒计时
  */
-export function DashboardView({ initialData }: DashboardViewProps) {
+export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -777,15 +780,20 @@ export function DashboardView({ initialData }: DashboardViewProps) {
               System Status
             </span>
             <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
-            <Link
-              href="https://github.com/BingZi-233/check-cx"
-              target="_blank"
-              className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-xs"
-            >
-              <Github className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-              <span>GitHub</span>
-            </Link>
-            <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
+            {siteConfig?.githubUrl && (
+              <>
+                <Link
+                  href={siteConfig.githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-xs"
+                >
+                  <Github className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                  <span>GitHub</span>
+                </Link>
+                <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
+              </>
+            )}
             <ThemeToggle />
             <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
             <Link
