@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clearPingCache } from "@/lib/core/global-state";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -20,6 +21,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const admin = createAdminClient();
   const { error } = await admin.from("check_configs").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 清理后端缓存
+  clearPingCache();
+
   return NextResponse.json({ ok: true });
 }
 
@@ -30,6 +35,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const admin = createAdminClient();
   const { error } = await admin.from("check_configs").update({ ...body, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 清理后端缓存
+  clearPingCache();
+
   return NextResponse.json({ ok: true });
 }
 
@@ -39,5 +48,9 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const admin = createAdminClient();
   const { error } = await admin.from("check_configs").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 清理后端缓存
+  clearPingCache();
+
   return NextResponse.json({ ok: true });
 }

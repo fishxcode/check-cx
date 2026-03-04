@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { refreshSiteSettings } from "@/lib/core/site-settings";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -28,5 +29,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { error } = await admin.from("site_settings").update({ value: String(value) }).eq("key", key);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 更新后端缓存
+  await refreshSiteSettings();
+
   return NextResponse.json({ ok: true });
 }

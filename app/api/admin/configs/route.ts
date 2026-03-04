@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clearPingCache } from "@/lib/core/global-state";
 
 function maskKey(key: string) {
   return "••••" + key.slice(-4);
@@ -46,5 +47,9 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 清理后端缓存，让前台重新获取最新配置
+  clearPingCache();
+
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
