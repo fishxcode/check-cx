@@ -23,8 +23,10 @@ interface SettingsPageProps {
 }
 
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
+  const isSecret = setting.value_type === "secret";
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(setting.value ?? "");
+  // secret 类型编辑时从空白开始，留空=不修改
+  const [draft, setDraft] = useState(isSecret ? "" : (setting.value ?? ""));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -37,7 +39,7 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
       body: JSON.stringify({ value: draft }),
     });
     setSaving(false);
-    if (res.ok) { setEditing(false); onSaved(); }
+    if (res.ok) { setEditing(false); setDraft(isSecret ? "" : draft); onSaved(); }
     else { const d = await res.json(); setErr(d.error ?? "保存失败"); }
   }
 
@@ -49,26 +51,27 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
         {editing ? (
           <div className="flex items-center gap-1.5">
             <input
-              type={setting.value_type === "number" ? "number" : "text"}
+              type={isSecret ? "password" : setting.value_type === "number" ? "number" : "text"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              className="h-7 w-24 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              placeholder={isSecret ? "输入新密钥（留空保留原值）" : undefined}
+              className="h-7 w-40 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && save()}
             />
             <button onClick={save} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
               <Check className="h-3.5 w-3.5" />
             </button>
-            <button onClick={() => { setEditing(false); setDraft(setting.value ?? ""); setErr(""); }} className="rounded p-1 text-muted-foreground hover:bg-muted">
+            <button onClick={() => { setEditing(false); setDraft(isSecret ? "" : (setting.value ?? "")); setErr(""); }} className="rounded p-1 text-muted-foreground hover:bg-muted">
               <X className="h-3.5 w-3.5" />
             </button>
             {err && <span className="text-xs text-destructive">{err}</span>}
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{setting.value ?? "—"}</code>
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{setting.value || "—"}</code>
             <button
-              onClick={() => { setDraft(setting.value ?? ""); setEditing(true); }}
+              onClick={() => { setDraft(isSecret ? "" : (setting.value ?? "")); setEditing(true); }}
               className="sm:opacity-0 sm:group-hover:opacity-100 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
             >
               <Pencil className="h-3 w-3" />

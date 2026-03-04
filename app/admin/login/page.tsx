@@ -1,10 +1,41 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Activity, ArrowLeft, AlertCircle } from "lucide-react";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { Activity } from "lucide-react";
+import { LoginForm } from "./login-form";
 
 export async function signIn(formData: FormData) {
   "use server";
+
+  // 1. 读取 Turnstile secret key
+  const admin = createAdminClient();
+  const { data: ts } = await admin
+    .from("site_settings")
+    .select("value")
+    .eq("key", "cf.turnstile_secret_key")
+    .single();
+  const secretKey = ts?.value ?? "";
+
+  // 2. 如有 secret key，验证 Turnstile token
+  if (secretKey) {
+    const token = (formData.get("cf-turnstile-response") as string) ?? "";
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: secretKey, response: token }),
+      }
+    );
+    const result = await res.json();
+    if (!result.success) {
+      redirect(
+        "/admin/login?error=" + encodeURIComponent("人机验证失败，请重试")
+      );
+    }
+  }
+
+  // 3. 原有邮密登录逻辑
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const supabase = await createClient();
@@ -21,6 +52,16 @@ export default async function AdminLoginPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
+
+  // 读取 Turnstile site key（公开密钥，传给前端渲染）
+  const admin = createAdminClient();
+  const { data: sk } = await admin
+    .from("site_settings")
+    .select("value")
+    .eq("key", "cf.turnstile_site_key")
+    .single();
+  const turnstileSiteKey = sk?.value ?? "";
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       {/* 左侧装饰面板（桌面端） */}
@@ -29,7 +70,8 @@ export default async function AdminLoginPage({
         <div
           className="absolute inset-0 z-0 opacity-[0.06]"
           style={{
-            backgroundImage: "linear-gradient(to right, hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--foreground)) 1px, transparent 1px)",
+            backgroundImage:
+              "linear-gradient(to right, hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--foreground)) 1px, transparent 1px)",
             backgroundSize: "40px 40px",
           }}
         />
@@ -59,20 +101,32 @@ export default async function AdminLoginPage({
           {/* System Health 装饰卡片 */}
           <div className="w-full rounded-2xl border border-border bg-background/60 backdrop-blur-xl p-5 shadow-sm text-left">
             <div className="flex items-center justify-between mb-5">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">System Health</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                System Health
+              </span>
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Live</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  Live
+                </span>
               </div>
             </div>
             <div className="flex items-end justify-between">
               <div className="space-y-1">
-                <span className="text-[10px] text-muted-foreground uppercase font-medium">30d Uptime</span>
-                <div className="text-3xl font-mono font-bold leading-none tabular-nums">99.99%</div>
+                <span className="text-[10px] text-muted-foreground uppercase font-medium">
+                  30d Uptime
+                </span>
+                <div className="text-3xl font-mono font-bold leading-none tabular-nums">
+                  99.99%
+                </div>
               </div>
               <div className="h-8 w-20 flex items-end gap-[3px]">
                 {[40, 65, 55, 80, 70, 90, 100].map((h, i) => (
-                  <div key={i} className={`flex-1 rounded-t-sm ${i === 6 ? "bg-primary" : "bg-primary/25"}`} style={{ height: `${h}%` }} />
+                  <div
+                    key={i}
+                    className={`flex-1 rounded-t-sm ${i === 6 ? "bg-primary" : "bg-primary/25"}`}
+                    style={{ height: `${h}%` }}
+                  />
                 ))}
               </div>
             </div>
@@ -80,78 +134,12 @@ export default async function AdminLoginPage({
         </div>
       </div>
 
-      {/* 右侧登录表单 */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 bg-background">
-        <div className="absolute top-6 left-6 z-30">
-          <Link
-            href="/"
-            className="group flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <div className="p-1.5 rounded-full border border-border group-hover:bg-muted transition-colors">
-              <ArrowLeft className="h-3 w-3" />
-            </div>
-            返回首页
-          </Link>
-        </div>
-
-        <div className="w-full max-w-[380px] space-y-8">
-          <div className="space-y-2">
-            <div className="lg:hidden flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 mb-5">
-              <Activity className="h-5 w-5 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">管理后台</h1>
-            <p className="text-sm text-muted-foreground">Check CX · Admin Panel</p>
-          </div>
-
-          <form action={signIn} className="space-y-5">
-            {error && (
-              <div className="p-3.5 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-px" />
-                <p className="leading-relaxed">{decodeURIComponent(error)}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="text-sm font-medium">邮箱</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  placeholder="admin@example.com"
-                  className="w-full h-11 rounded-xl border border-input bg-transparent px-4 text-sm transition-all outline-none placeholder:text-muted-foreground/40 focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="password" className="text-sm font-medium">密码</label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full h-11 rounded-xl border border-input bg-transparent px-4 text-sm transition-all outline-none placeholder:text-muted-foreground/40 focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
-            >
-              <span>登录</span>
-              <Activity className="h-4 w-4 group-hover:animate-pulse" />
-            </button>
-          </form>
-
-          <p className="text-center text-xs text-muted-foreground/50">
-            Check CX · AI Services Monitoring
-          </p>
-        </div>
-      </div>
+      {/* 右侧登录表单（Client Component，支持 Turnstile） */}
+      <LoginForm
+        signIn={signIn}
+        turnstileSiteKey={turnstileSiteKey}
+        error={error}
+      />
     </div>
   );
 }

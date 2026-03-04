@@ -20,12 +20,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   // 确认该 key 存在且 editable=true
   const { data: setting, error: fetchErr } = await admin
     .from("site_settings")
-    .select("editable")
+    .select("editable, value_type")
     .eq("key", key)
     .single();
 
   if (fetchErr || !setting) return NextResponse.json({ error: "设置项不存在" }, { status: 404 });
   if (!setting.editable) return NextResponse.json({ error: "该设置项不可编辑" }, { status: 403 });
+
+  // secret 类型：空值提交视为「不修改」，保留原值
+  if (setting.value_type === "secret" && !String(value)) {
+    return NextResponse.json({ ok: true });
+  }
 
   const { error } = await admin.from("site_settings").update({ value: String(value) }).eq("key", key);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

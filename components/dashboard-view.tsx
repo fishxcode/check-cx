@@ -363,6 +363,12 @@ function GroupPanel({
                     {statusSummary.error} 错误
                  </span>
                )}
+               {statusSummary.maintenance > 0 && (
+                 <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                    {statusSummary.maintenance} 维护
+                 </span>
+               )}
             </div>
           </div>
         </CollapsibleTrigger>
