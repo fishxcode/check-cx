@@ -21,7 +21,8 @@ export async function GET() {
 
     return NextResponse.json(siteConfig, {
       headers: {
-        "Cache-Control": "public, max-age=300", // 5 分钟缓存
+        "Cache-Control": "public, max-age=60", // 改为 1 分钟缓存，更及时更新
+        "ETag": JSON.stringify(siteConfig), // 添加 ETag，便于浏览器验证
       },
     });
   } catch (error) {

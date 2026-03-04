@@ -12,7 +12,7 @@ export interface SiteConfig {
 
 let cachedConfig: SiteConfig | null = null;
 let lastFetchedAt = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟缓存
+const CACHE_TTL_MS = 30 * 1000; // 30 秒缓存（改短以更快反应后台变更）
 
 export async function getSiteConfig(forceRefresh = false): Promise<SiteConfig> {
   const now = Date.now();
@@ -24,7 +24,10 @@ export async function getSiteConfig(forceRefresh = false): Promise<SiteConfig> {
 
   try {
     const response = await fetch("/api/site-config", {
-      cache: "no-store",
+      cache: "no-store", // 禁用浏览器缓存，保证每次调用都向服务器验证
+      headers: {
+        "Cache-Control": "no-cache", // 告知浏览器不使用缓存
+      },
     });
 
     if (response.ok) {
