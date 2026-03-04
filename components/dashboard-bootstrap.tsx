@@ -5,6 +5,7 @@ import {useCallback, useEffect, useState} from "react";
 import {DashboardView} from "@/components/dashboard-view";
 import {DashboardSkeleton} from "@/components/dashboard-skeleton";
 import {fetchWithCache} from "@/lib/core/frontend-cache";
+import {getSiteConfig} from "@/lib/utils/site-config-cache";
 import type {AvailabilityPeriod, DashboardData} from "@/lib/types";
 
 const DEFAULT_PERIOD: AvailabilityPeriod = "7d";
@@ -15,14 +16,18 @@ export function DashboardBootstrap() {
 
   const loadData = useCallback(async (forceFresh?: boolean) => {
     try {
-      const result = await fetchWithCache({
-        trendPeriod: DEFAULT_PERIOD,
-        forceFresh,
-        revalidateIfFresh: true,
-        onBackgroundUpdate: (nextData) => {
-          setData(nextData);
-        },
-      });
+      // 并行加载站点配置和 Dashboard 数据
+      const [_, result] = await Promise.all([
+        getSiteConfig(forceFresh),
+        fetchWithCache({
+          trendPeriod: DEFAULT_PERIOD,
+          forceFresh,
+          revalidateIfFresh: true,
+          onBackgroundUpdate: (nextData) => {
+            setData(nextData);
+          },
+        }),
+      ]);
       setErrorMessage(null);
       setData(result.data);
     } catch (error) {

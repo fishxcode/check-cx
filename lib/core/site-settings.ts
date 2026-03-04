@@ -27,3 +27,11 @@ export async function refreshSiteSettings(): Promise<void> {
     _refreshing = false;
   }
 }
+
+/**
+ * 获取所有站点配置（用于 API 端点）
+ */
+export async function getAllSiteSettings(): Promise<Record<string, string>> {
+  await refreshSiteSettings();
+  return _cache;
+}

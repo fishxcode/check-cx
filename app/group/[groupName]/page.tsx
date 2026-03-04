@@ -4,6 +4,8 @@ import {ChevronLeft} from "lucide-react";
 
 import {GroupDashboardBootstrap} from "@/components/group-dashboard-bootstrap";
 import {getAvailableGroups} from "@/lib/core/group-data";
+import {loadGroupInfos} from "@/lib/database/group-info";
+import {getSiteSettingSync, refreshSiteSettings} from "@/lib/core/site-settings";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,9 +19,19 @@ export async function generateMetadata({ params }: GroupPageProps) {
   const { groupName } = await params;
   const decodedGroupName = decodeURIComponent(groupName);
 
+  // 刷新站点配置以获取应用名称
+  await refreshSiteSettings();
+  const appTitle = getSiteSettingSync("site.title", "Check CX");
+
+  // 获取分组信息
+  const groupInfos = await loadGroupInfos();
+  const groupInfo = groupInfos.find((g) => g.group_name === decodedGroupName);
+  const groupDisplayName = groupInfo?.display_name || decodedGroupName;
+  const groupDescription = groupInfo?.description || `查看 ${decodedGroupName} 分组下的模型健康状态`;
+
   return {
-    title: `${decodedGroupName} - 模型健康面板`,
-    description: `查看 ${decodedGroupName} 分组下的模型健康状态`,
+    title: `${groupDisplayName} - ${appTitle}`,
+    description: groupDescription,
   };
 }
 

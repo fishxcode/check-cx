@@ -5,6 +5,7 @@ import "@/lib/core/poller";
 import NextTopLoader from "nextjs-toploader";
 import {ThemeProvider} from "@/components/theme-provider";
 import {NotificationBanner} from "@/components/notification-banner";
+import {getSiteSettingSync, refreshSiteSettings} from "@/lib/core/site-settings";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,13 +17,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "LINUX DO - 模型中转状态检测",
-  description: "实时检测 OpenAI / Gemini / Anthropic 对话接口的可用性与延迟",
-  icons: {
-    icon: "/favicon.png",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  // 刷新配置缓存
+  await refreshSiteSettings();
+
+  // 读取配置或使用默认值
+  const title = getSiteSettingSync("site.title", "LINUX DO - 模型中转状态检测");
+  const description = getSiteSettingSync("site.description", "实时检测 OpenAI / Gemini / Anthropic 对话接口的可用性与延迟");
+  const faviconUrl = getSiteSettingSync("site.favicon_url", "/favicon.png");
+
+  return {
+    title,
+    description,
+    icons: {
+      icon: faviconUrl,
+    },
+  };
+}
 
 const themeBootScript = `(()=>{
   const hour = new Date().getHours();
