@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS alert_channels (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT NOT NULL,
-  type        TEXT NOT NULL CHECK (type IN ('webhook', 'feishu', 'dingtalk')),
+  type        TEXT NOT NULL CHECK (type IN ('webhook', 'feishu', 'dingtalk', 'pushplus')),
   config      JSONB NOT NULL DEFAULT '{}',
   enabled     BOOLEAN NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
