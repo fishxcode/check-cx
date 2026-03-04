@@ -149,6 +149,67 @@ const buildGroupedTimelines = (
   return groups;
 };
 
+/**
+ * 检查单个 Provider 是否匹配搜索词
+ */
+function providerMatchesQuery(
+  timeline: ProviderTimeline,
+  query: string
+): boolean {
+  const lower = query.toLowerCase();
+  return (
+    timeline.latest.name.toLowerCase().includes(lower) ||           // 名称
+    timeline.latest.type.toLowerCase().includes(lower) ||           // 类型 (openai/gemini/anthropic)
+    timeline.latest.model.toLowerCase().includes(lower) ||          // 模型 (gpt-4o/claude-opus)
+    timeline.latest.status.toLowerCase().includes(lower) ||         // 状态 (operational/degraded/failed)
+    timeline.latest.endpoint.toLowerCase().includes(lower)          // 端点
+  );
+}
+
+/**
+ * 检查分组是否匹配（分组名/描述或内部 Provider 匹配）
+ */
+function groupMatchesQuery(
+  group: GroupedProviderTimelines,
+  query: string
+): boolean {
+  const lower = query.toLowerCase();
+
+  // 分组名称或描述匹配
+  if (group.displayName.toLowerCase().includes(lower)) return true;
+  if (group.description?.toLowerCase().includes(lower)) return true;
+
+  // 分组内任何 Provider 匹配
+  return group.timelines.some(timeline => providerMatchesQuery(timeline, lower));
+}
+
+/**
+ * 过滤分组内的 Provider（只显示匹配的）
+ */
+function filterProvidersInGroup(
+  group: GroupedProviderTimelines,
+  query: string
+): GroupedProviderTimelines | null {
+  const lower = query.toLowerCase();
+
+  // 如果分组名称/描述匹配，显示所有 Provider
+  if (
+    group.displayName.toLowerCase().includes(lower) ||
+    group.description?.toLowerCase().includes(lower)
+  ) {
+    return group;
+  }
+
+  // 否则只过滤匹配的 Provider
+  const filteredTimelines = group.timelines.filter(timeline =>
+    providerMatchesQuery(timeline, lower)
+  );
+
+  return filteredTimelines.length > 0
+    ? { ...group, timelines: filteredTimelines }
+    : null;
+}
+
 /** Tech-style decorative corner plus marker */
 const CornerPlus = ({ className }: { className?: string }) => (
   <svg 
@@ -654,14 +715,24 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         ? orderedGroupNames
         : groupedNames;
 
-    // Filter by search query
+    // Filter by search query (支持分组名称和 Provider 多个维度)
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      result = result.filter((groupName) => {
+      const filteredGroups: typeof groupedTimelineMap = new Map();
+
+      for (const groupName of result) {
         const group = groupedTimelineMap.get(groupName);
-        if (!group) return false;
-        return group.displayName.toLowerCase().includes(query);
-      });
+        if (!group) continue;
+
+        const filtered = filterProvidersInGroup(group, query);
+        if (filtered) {
+          filteredGroups.set(groupName, filtered);
+        }
+      }
+
+      // 更新 groupedTimelineMap 为过滤后的版本
+      Object.assign(groupedTimelineMap, filteredGroups);
+      result = Array.from(filteredGroups.keys());
     }
 
     // Filter by selected tags
@@ -717,8 +788,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       <div className="mb-4 rounded-full bg-muted/50 p-4">
         <Search className="h-8 w-8 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-semibold">没有找到匹配的分组</h3>
-      <p className="text-muted-foreground">尝试使用其他关键词或标签筛选</p>
+      <h3 className="text-lg font-semibold">没有找到匹配的结果</h3>
+      <p className="text-muted-foreground">尝试搜索分组名称、Provider 名称、类型或状态</p>
       {(searchQuery || selectedTags.length > 0) && (
         <button
           type="button"
@@ -746,7 +817,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           gridColsClass,
           availabilityStats,
           selectedPeriod,
-          defaultOpen: false,
+          // 搜索活跃时自动展开包含匹配结果的分组
+          defaultOpen: searchQuery.trim() ? true : false,
         };
         // Only enable drag-and-drop in custom sort mode
         return isDndReady && sortMode === "custom" ? (
@@ -825,7 +897,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
              <div className="relative w-full sm:w-64">
                <input
                  type="text"
-                 placeholder="搜索分组..."
+                 placeholder="搜索分组或 Provider（名称、类型、状态）..."
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
                  className="h-10 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
