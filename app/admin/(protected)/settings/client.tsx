@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Check, Pencil, X, SlidersHorizontal, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Check, Pencil, X, SlidersHorizontal, KeyRound, Eye, EyeOff, Globe } from "lucide-react";
+import { SiteConfigForm } from "@/components/admin/site-config-form";
 
 interface SiteSetting {
   key: string;
@@ -25,7 +26,6 @@ interface SettingsPageProps {
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
   const isSecret = setting.value_type === "secret";
   const [editing, setEditing] = useState(false);
-  // secret 类型编辑时从空白开始，留空=不修改
   const [draft, setDraft] = useState(isSecret ? "" : (setting.value ?? ""));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -83,15 +83,94 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
   );
 }
 
+const SITE_CONFIG_KEYS = [
+  "site.title",
+  "site.description",
+  "site.logo_url",
+  "site.favicon_url",
+  "site.github_url",
+] as const;
+
+const createEmptySiteConfig = (): Record<string, string> => ({
+  "site.title": "",
+  "site.description": "",
+  "site.logo_url": "",
+  "site.favicon_url": "",
+  "site.github_url": "",
+});
+
 export function SettingsClient({ envVars }: SettingsPageProps) {
   const [settings, setSettings] = useState<SiteSetting[]>([]);
+  const [siteConfig, setSiteConfig] = useState<Record<string, string>>(createEmptySiteConfig);
+  const [siteConfigSaving, setSiteConfigSaving] = useState(false);
+  const [siteConfigMessage, setSiteConfigMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  const load = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
     if (res.ok) setSettings(await res.json());
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadSiteConfig = useCallback(async () => {
+    const res = await fetch("/api/admin/site-config");
+    if (!res.ok) {
+      return;
+    }
+
+    const data: Array<{ key: string; value: string | null }> = await res.json();
+    const nextConfig = createEmptySiteConfig();
+    for (const item of data) {
+      if (SITE_CONFIG_KEYS.includes(item.key as (typeof SITE_CONFIG_KEYS)[number])) {
+        nextConfig[item.key] = item.value ?? "";
+      }
+    }
+    setSiteConfig(nextConfig);
+  }, []);
+
+  const loadAll = useCallback(async () => {
+    await Promise.all([loadSettings(), loadSiteConfig()]);
+  }, [loadSettings, loadSiteConfig]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  const handleSiteConfigChange = useCallback((key: string, value: string) => {
+    setSiteConfig((current) => ({ ...current, [key]: value }));
+    setSiteConfigMessage(null);
+  }, []);
+
+  const saveSiteConfig = useCallback(async () => {
+    setSiteConfigSaving(true);
+    setSiteConfigMessage(null);
+
+    try {
+      const results = await Promise.all(
+        SITE_CONFIG_KEYS.map(async (key) => {
+          const res = await fetch("/api/admin/site-config", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key, value: siteConfig[key] ?? "" }),
+          });
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({ error: "保存失败" }));
+            throw new Error(data.error ?? `${key} 保存失败`);
+          }
+        })
+      );
+
+      void results;
+      setSiteConfigMessage({ type: "ok", text: "站点设置已保存" });
+      await loadSiteConfig();
+    } catch (error) {
+      setSiteConfigMessage({
+        type: "err",
+        text: error instanceof Error ? error.message : "站点设置保存失败",
+      });
+    } finally {
+      setSiteConfigSaving(false);
+    }
+  }, [loadSiteConfig, siteConfig]);
 
   return (
     <div className="space-y-6">
@@ -100,7 +179,41 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
         <h1 className="text-xl font-semibold">系统设置</h1>
       </div>
 
-      {/* 可编辑 DB 设置 */}
+      <section className="rounded-xl border border-border overflow-hidden">
+        <div className="border-b border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
+          <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">站点设置</p>
+            <p className="text-xs text-muted-foreground mt-0.5">控制前台标题、描述、Logo、Favicon 和 GitHub 链接展示</p>
+          </div>
+        </div>
+        <div className="space-y-4 p-4">
+          <SiteConfigForm data={siteConfig} onChange={handleSiteConfigChange} />
+
+          {siteConfigMessage && (
+            <div className={`flex items-center gap-1.5 text-xs rounded-lg px-3 py-2 ${
+              siteConfigMessage.type === "ok"
+                ? "bg-emerald-500/10 text-emerald-600"
+                : "bg-destructive/10 text-destructive"
+            }`}>
+              {siteConfigMessage.type === "ok" ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+              {siteConfigMessage.text}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void saveSiteConfig()}
+              disabled={siteConfigSaving}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {siteConfigSaving ? "保存中…" : "保存站点设置"}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-xl border border-border overflow-hidden">
         <div className="border-b border-border bg-muted/30 px-4 py-2.5">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">运行参数</p>
@@ -120,7 +233,7 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
             )}
             {settings.map((s) => (
               s.editable
-                ? <EditableRow key={s.key} setting={s} onSaved={load} />
+                ? <EditableRow key={s.key} setting={s} onSaved={loadSettings} />
                 : (
                   <tr key={s.key} className="opacity-60">
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{s.key}</td>
@@ -135,7 +248,6 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
         </table>
       </section>
 
-      {/* 只读环境变量 */}
       {envVars.length > 0 && (
         <section className="rounded-xl border border-border overflow-hidden">
           <div className="border-b border-border bg-muted/30 px-4 py-2.5">
@@ -165,7 +277,6 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
         </section>
       )}
 
-      {/* 修改密码 */}
       <ChangePasswordSection />
     </div>
   );

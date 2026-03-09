@@ -20,7 +20,7 @@ export function SiteConfigForm({ data, onChange }: SiteConfigFormProps) {
           onChange={(e) => onChange("site.title", e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          显示在浏览器标签页和搜索结果中
+          显示在浏览器标签页、首页主标题和页脚中
         </p>
       </div>
 
@@ -33,7 +33,7 @@ export function SiteConfigForm({ data, onChange }: SiteConfigFormProps) {
           onChange={(e) => onChange("site.description", e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          用于 SEO meta description
+          用于 SEO meta description 和首页描述文案
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export function SiteConfigForm({ data, onChange }: SiteConfigFormProps) {
           onChange={(e) => onChange("site.logo_url", e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          Logo 图片路径或完整 URL
+          首页头部 Logo 图片路径或完整 URL
         </p>
       </div>
 
@@ -60,6 +60,19 @@ export function SiteConfigForm({ data, onChange }: SiteConfigFormProps) {
         />
         <p className="text-xs text-muted-foreground">
           网站图标路径或完整 URL
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="site-github-url">GitHub URL</Label>
+        <Input
+          id="site-github-url"
+          placeholder="如：https://github.com/your-org/your-repo"
+          value={data["site.github_url"] || ""}
+          onChange={(e) => onChange("site.github_url", e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          首页头部 GitHub 链接，留空则不显示
         </p>
       </div>
     </div>

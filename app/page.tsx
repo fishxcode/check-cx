@@ -1,10 +1,15 @@
 import {DashboardBootstrap} from "@/components/dashboard-bootstrap";
 import {ClientYear} from "@/components/client-time";
+import {getSiteSettingSync, refreshSiteSettings} from "@/lib/core/site-settings";
 import packageJson from "@/package.json";
 
 const ESTIMATED_VERSION = `v${packageJson.version}`;
+const DEFAULT_SITE_TITLE = "Check CX";
 
-export default function Home() {
+export default async function Home() {
+  await refreshSiteSettings();
+  const siteTitle = getSiteSettingSync("site.title", DEFAULT_SITE_TITLE);
+
   return (
     <div className="py-8 md:py-16">
       <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 sm:gap-8 sm:px-6 lg:px-12">
@@ -14,7 +19,7 @@ export default function Home() {
       <footer className="mt-16 border-t border-border/40">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col items-center justify-between gap-4 px-3 py-6 sm:flex-row sm:px-6 lg:px-12">
           <div className="text-sm text-muted-foreground">
-            © <ClientYear placeholder="2026" /> Check CX. All rights reserved.
+            © <ClientYear placeholder="2026" /> {siteTitle}. All rights reserved.
           </div>
 
           <div className="flex items-center gap-4">

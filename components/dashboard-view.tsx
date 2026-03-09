@@ -94,6 +94,9 @@ const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "name", label: "按名称" },
 ];
 
+const DEFAULT_SITE_TITLE = "Check CX - AI 模型健康监控";
+const DEFAULT_SITE_DESCRIPTION = "实时追踪各大 AI 模型对话接口的可用性、延迟与官方服务状态。";
+
 // 未分组标识常量
 const UNGROUPED_KEY = "__ungrouped__";
 
@@ -165,23 +168,6 @@ function providerMatchesQuery(
     timeline.latest.status.toLowerCase().includes(lower) ||         // 状态 (operational/degraded/failed)
     timeline.latest.endpoint.toLowerCase().includes(lower)          // 端点
   );
-}
-
-/**
- * 检查分组是否匹配（分组名/描述或内部 Provider 匹配）
- */
-function groupMatchesQuery(
-  group: GroupedProviderTimelines,
-  query: string
-): boolean {
-  const lower = query.toLowerCase();
-
-  // 分组名称或描述匹配
-  if (group.displayName.toLowerCase().includes(lower)) return true;
-  if (group.description?.toLowerCase().includes(lower)) return true;
-
-  // 分组内任何 Provider 匹配
-  return group.timelines.some(timeline => providerMatchesQuery(timeline, lower));
 }
 
 /**
@@ -422,6 +408,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [isDndReady, setIsDndReady] = useState(false);
   const [activeOfficialCardId, setActiveOfficialCardId] = useState<string | null>(null);
+  const siteTitle = siteConfig?.title?.trim() || DEFAULT_SITE_TITLE;
+  const siteDescription = siteConfig?.description?.trim() || DEFAULT_SITE_DESCRIPTION;
+  const siteLogoUrl = siteConfig?.logoUrl?.trim() || "";
   
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
   const availabilityStats: AvailabilityStatsMap = data.availabilityStats ?? {};
@@ -852,8 +841,17 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       <header className="relative z-10 mb-8 flex flex-col justify-between gap-6 sm:mb-12 sm:gap-8 lg:flex-row lg:items-end">
         <div className="space-y-4">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
-              <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
+              {siteLogoUrl ? (
+                <span
+                  role="img"
+                  aria-label={siteTitle}
+                  className="h-full w-full bg-cover bg-center bg-no-repeat"
+                  style={{ backgroundImage: `url(${siteLogoUrl})` }}
+                />
+              ) : (
+                <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              )}
             </div>
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground sm:text-sm">
               System Status
@@ -885,16 +883,11 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           </div>
           
           <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
-            AI SERVICES <br />
-            <span className="text-muted-foreground">INTELLIGENCE MONITOR</span>
+            {siteTitle}
           </h1>
           
           <div className="flex max-w-lg flex-col gap-2 text-sm text-muted-foreground sm:text-base">
-             <p className="leading-relaxed">
-               实时追踪各大 AI 模型对话接口的可用性、延迟与官方服务状态。
-               <br />
-               Advanced performance metrics for next-gen intelligence.
-             </p>
+             <p className="leading-relaxed">{siteDescription}</p>
           </div>
         </div>
 
