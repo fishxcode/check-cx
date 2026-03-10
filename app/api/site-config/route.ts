@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAllSiteSettings } from "@/lib/core/site-settings";
 
+function buildEtag(payload: unknown): string {
+  const raw = JSON.stringify(payload);
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) + hash) ^ raw.charCodeAt(i);
+  }
+  return `W/"${(hash >>> 0).toString(16)}"`;
+}
+
 /**
  * 公开端点：获取所有前台可用的站点配置
  * 用于前端动态读取 title、description、logo_url 等
@@ -23,7 +32,7 @@ export async function GET() {
     return NextResponse.json(siteConfig, {
       headers: {
         "Cache-Control": "public, max-age=60", // 改为 1 分钟缓存，更及时更新
-        "ETag": JSON.stringify(siteConfig), // 添加 ETag，便于浏览器验证
+        "ETag": buildEtag(siteConfig), // ETag 必须是 ASCII，避免中文值触发 ByteString 异常
       },
     });
   } catch (error) {
