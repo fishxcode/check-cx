@@ -9,8 +9,10 @@ export function getSiteSettingSync(key: string, fallback: string): string {
   return _cache[key] ?? fallback;
 }
 
-export async function refreshSiteSettings(): Promise<void> {
-  if (_refreshing || Date.now() - _cacheAt < TTL_MS) return;
+export async function refreshSiteSettings(options?: { force?: boolean }): Promise<void> {
+  if (_refreshing) return;
+  const force = options?.force ?? false;
+  if (!force && Date.now() - _cacheAt < TTL_MS) return;
   _refreshing = true;
   try {
     const admin = createAdminClient();

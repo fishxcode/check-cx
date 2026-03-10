@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runProviderChecks } from "@/lib/providers";
 import { appendHistory } from "@/lib/database/history";
 import { evaluateAlerts } from "@/lib/core/alert-engine";
+import { clearPingCache } from "@/lib/core/global-state";
+import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
+import { clearGroupDashboardCache } from "@/lib/core/group-data";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -41,6 +44,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   // 手动检测同样触发告警规则评估
   await evaluateAlerts(result.id, result.name, result.status, result.latencyMs ?? null).catch(() => {});
+
+  // 手动检测后立即失效缓存，确保前台下一次拉取看到最新结果
+  clearPingCache();
+  clearDashboardDataCache();
+  clearGroupDashboardCache();
 
   return NextResponse.json({
     status: result.status,

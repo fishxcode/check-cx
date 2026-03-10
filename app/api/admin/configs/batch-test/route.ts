@@ -5,6 +5,9 @@ import { runProviderChecks } from "@/lib/providers";
 import { appendHistory } from "@/lib/database/history";
 import { evaluateAlerts } from "@/lib/core/alert-engine";
 import { sendPollSummary } from "@/lib/core/poll-summary";
+import { clearPingCache } from "@/lib/core/global-state";
+import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
+import { clearGroupDashboardCache } from "@/lib/core/group-data";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -48,6 +51,11 @@ export async function POST(request: NextRequest) {
 
   // 批量检测汇总通知
   await sendPollSummary(results).catch(() => {});
+
+  // 批量手动检测后立即失效缓存，确保前台下一次拉取看到最新结果
+  clearPingCache();
+  clearDashboardDataCache();
+  clearGroupDashboardCache();
 
   const resultMap = Object.fromEntries(
     results.map((r) => [r.id, { status: r.status, latencyMs: r.latencyMs, message: r.message ?? null }])

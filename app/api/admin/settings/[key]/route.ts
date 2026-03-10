@@ -36,7 +36,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // 更新后端缓存
-  await refreshSiteSettings();
+  await refreshSiteSettings({ force: true });
 
   return NextResponse.json({ ok: true });
 }

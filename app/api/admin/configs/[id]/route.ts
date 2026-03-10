@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clearPingCache } from "@/lib/core/global-state";
+import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
+import { clearGroupDashboardCache } from "@/lib/core/group-data";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -24,6 +26,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   // 清理后端缓存
   clearPingCache();
+  clearDashboardDataCache();
+  clearGroupDashboardCache();
 
   return NextResponse.json({ ok: true });
 }
@@ -38,6 +42,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // 清理后端缓存
   clearPingCache();
+  clearDashboardDataCache();
+  clearGroupDashboardCache();
 
   return NextResponse.json({ ok: true });
 }
@@ -51,6 +57,8 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   // 清理后端缓存
   clearPingCache();
+  clearDashboardDataCache();
+  clearGroupDashboardCache();
 
   return NextResponse.json({ ok: true });
 }

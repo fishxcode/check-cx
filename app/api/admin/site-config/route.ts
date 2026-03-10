@@ -76,7 +76,7 @@ export async function PUT(request: NextRequest) {
   }
 
   // 更新后端缓存
-  await refreshSiteSettings();
+  await refreshSiteSettings({ force: true });
 
   return NextResponse.json({ ok: true });
 }
