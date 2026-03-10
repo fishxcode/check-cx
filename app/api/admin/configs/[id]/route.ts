@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
+import { clearAvailabilityStatsCache } from "@/lib/database/availability";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -28,6 +29,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   clearPingCache();
   clearDashboardDataCache();
   clearGroupDashboardCache();
+  clearAvailabilityStatsCache();
 
   return NextResponse.json({ ok: true });
 }
@@ -44,6 +46,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   clearPingCache();
   clearDashboardDataCache();
   clearGroupDashboardCache();
+  clearAvailabilityStatsCache();
 
   return NextResponse.json({ ok: true });
 }
@@ -59,6 +62,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   clearPingCache();
   clearDashboardDataCache();
   clearGroupDashboardCache();
+  clearAvailabilityStatsCache();
 
   return NextResponse.json({ ok: true });
 }

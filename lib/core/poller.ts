@@ -13,6 +13,7 @@ import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
 import {evaluateAlerts} from "./alert-engine";
 import {sendPollSummary} from "./poll-summary";
 import {refreshSiteSettings} from "./site-settings";
+import {clearAvailabilityStatsCache} from "../database/availability";
 import type {HealthStatus} from "../types";
 
 const POLL_INTERVAL_MS = getPollingIntervalMs();
@@ -90,6 +91,7 @@ async function tick() {
 
     console.log(`[check-cx] 正在写入历史记录（${results.length} 条）…`);
     await historySnapshotStore.append(results);
+    clearAvailabilityStatsCache();
     const providerCount = new Set(results.map((item) => item.id)).size;
     console.log(
       `[check-cx] 历史记录更新完成：providers=${providerCount}，本轮新增=${results.length}`

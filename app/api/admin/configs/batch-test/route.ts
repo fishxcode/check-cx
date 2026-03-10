@@ -8,6 +8,7 @@ import { sendPollSummary } from "@/lib/core/poll-summary";
 import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
+import { clearAvailabilityStatsCache } from "@/lib/database/availability";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
   clearPingCache();
   clearDashboardDataCache();
   clearGroupDashboardCache();
+  clearAvailabilityStatsCache();
 
   const resultMap = Object.fromEntries(
     results.map((r) => [r.id, { status: r.status, latencyMs: r.latencyMs, message: r.message ?? null }])

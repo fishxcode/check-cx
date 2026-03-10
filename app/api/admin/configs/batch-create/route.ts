@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
+import { clearAvailabilityStatsCache } from "@/lib/database/availability";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
     clearPingCache();
     clearDashboardDataCache();
     clearGroupDashboardCache();
+    clearAvailabilityStatsCache();
 
     return NextResponse.json({ count: data.length, ids: data.map((d) => d.id) }, { status: 201 });
   } catch (error) {

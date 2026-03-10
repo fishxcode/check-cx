@@ -7,6 +7,7 @@ import { evaluateAlerts } from "@/lib/core/alert-engine";
 import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
+import { clearAvailabilityStatsCache } from "@/lib/database/availability";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -49,6 +50,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   clearPingCache();
   clearDashboardDataCache();
   clearGroupDashboardCache();
+  clearAvailabilityStatsCache();
 
   return NextResponse.json({
     status: result.status,
