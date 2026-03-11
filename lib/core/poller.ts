@@ -146,14 +146,16 @@ if (!getPollerTimer()) {
     setPollerTimer(timer as unknown as ReturnType<typeof setInterval>);
   };
 
-  const firstInterval = getPollingIntervalMs();
+  const interval = getPollingIntervalMs();
   console.log(
-    `[check-cx] 初始化后台轮询器，interval=${firstInterval}ms，首次检测预计 ${new Date(Date.now() + firstInterval).toISOString()}`
+    `[check-cx] 初始化后台轮询器，interval=${interval}ms，首次检测立即执行`
   );
   ensurePollerLeadership().catch((error) => {
     console.error("[check-cx] 初始化主节点选举失败", error);
   });
-  scheduleNext();
+  tick()
+    .catch((error) => console.error("[check-cx] 启动首轮检测失败", error))
+    .finally(scheduleNext);
 
   // 启动官方状态轮询器
   startOfficialStatusPoller();
