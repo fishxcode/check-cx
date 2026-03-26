@@ -5,5 +5,10 @@
   "env": {
     "CHECK_POLL_INTERVAL_SECONDS": "60"
   },
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/cron/check",
+      "schedule": "* * * * *"
+    }
+  ]
 }
