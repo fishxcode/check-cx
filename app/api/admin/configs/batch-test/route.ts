@@ -1,15 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "../../alerts/_auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runProviderChecks } from "@/lib/providers";
-import { appendHistory } from "@/lib/database/history";
-import { evaluateAlerts } from "@/lib/core/alert-engine";
-import { sendPollSummary } from "@/lib/core/poll-summary";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
-import { clearGroupDashboardCache } from "@/lib/core/group-data";
-import { clearAvailabilityStatsCache } from "@/lib/database/availability";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
+import { runChecksForConfigs } from "@/lib/core/config-check-execution";
 
 export async function POST(request: NextRequest) {
   const err = await requireAuth();
@@ -40,24 +33,7 @@ export async function POST(request: NextRequest) {
     groupName: d.group_name || null,
   }));
 
-  const results = await runProviderChecks(configs);
-
-  // 写入历史记录
-  await appendHistory(results);
-
-  // 逐条告警评估
-  await Promise.allSettled(
-    results.map((r) => evaluateAlerts(r.id, r.name, r.status, r.latencyMs ?? null))
-  );
-
-  // 批量检测汇总通知
-  await sendPollSummary(results).catch(() => {});
-
-  // 批量手动检测后立即失效缓存，确保前台下一次拉取看到最新结果
-  clearPingCache();
-  clearDashboardDataCache();
-  clearGroupDashboardCache();
-  clearAvailabilityStatsCache();
+  const results = await runChecksForConfigs(configs);
 
   const resultMap = Object.fromEntries(
     results.map((r) => [r.id, { status: r.status, latencyMs: r.latencyMs, message: r.message ?? null }])

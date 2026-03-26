@@ -97,6 +97,20 @@ INSERT INTO dev.site_settings (key, value, description, editable, value_type) VA
     ('history_retention_count',     '60',   '每个配置最多保留历史条数',        true,  'number')
 ON CONFLICT (key) DO NOTHING;
 
+-- 外部调度 Token 表
+CREATE TABLE dev.scheduler_tokens (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    token_hash text NOT NULL UNIQUE,
+    token_prefix text NOT NULL,
+    scope text NOT NULL DEFAULT 'checks:run',
+    enabled boolean NOT NULL DEFAULT true,
+    last_used_at timestamptz,
+    expires_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- 轮询主节点租约表（单行租约）
 CREATE TABLE dev.check_poller_leases (
     lease_key text PRIMARY KEY,
@@ -128,6 +142,9 @@ FOR SELECT USING (true);
 -- Enable RLS on check_poller_leases (service role only)
 ALTER TABLE dev.check_poller_leases ENABLE ROW LEVEL SECURITY;
 
+-- Enable RLS on scheduler_tokens (service role only)
+ALTER TABLE dev.scheduler_tokens ENABLE ROW LEVEL SECURITY;
+
 -- 序列属主
 ALTER SEQUENCE dev.check_history_id_seq
     OWNED BY dev.check_history.id;
@@ -145,6 +162,9 @@ CREATE INDEX idx_dev_check_history_config_id
 
 CREATE INDEX idx_dev_history_config_checked
     ON dev.check_history USING btree (config_id, checked_at DESC);
+
+CREATE INDEX idx_dev_scheduler_tokens_enabled
+    ON dev.scheduler_tokens USING btree (enabled, created_at DESC);
 
 -- 可用性统计视图
 CREATE OR REPLACE VIEW dev.availability_stats AS
@@ -204,12 +224,18 @@ BEFORE UPDATE ON dev.group_info
 FOR EACH ROW
 EXECUTE FUNCTION dev.update_updated_at_column();
 
+CREATE TRIGGER update_scheduler_tokens_updated_at
+BEFORE UPDATE ON dev.scheduler_tokens
+FOR EACH ROW
+EXECUTE FUNCTION dev.update_updated_at_column();
+
 -- 表与列注释
 COMMENT ON TABLE dev.check_configs IS 'AI 服务商配置表 - 存储各个 AI 服务商的 API 配置信息';
 COMMENT ON TABLE dev.check_history IS '健康检测历史记录表 - 存储每次 API 健康检测的结果';
 COMMENT ON TABLE dev.group_info IS '分组信息表 - 存储分组的额外信息';
 COMMENT ON TABLE dev.system_notifications IS '系统通知表 - 存储全局系统通知';
 COMMENT ON TABLE dev.check_poller_leases IS '轮询主节点租约表（单行租约）';
+COMMENT ON TABLE dev.scheduler_tokens IS '外部调度调用专用 API Token 表';
 
 COMMENT ON COLUMN dev.check_configs.id IS '配置 UUID - 自动生成的唯一标识符';
 COMMENT ON COLUMN dev.check_configs.name IS '配置显示名称 - 用于前端展示的友好名称';
@@ -242,6 +268,14 @@ COMMENT ON COLUMN dev.system_notifications.message IS '通知内容，支持 Mar
 COMMENT ON COLUMN dev.system_notifications.is_active IS '是否激活，true 为显示';
 COMMENT ON COLUMN dev.system_notifications.level IS '通知级别：info, warning, error';
 COMMENT ON COLUMN dev.system_notifications.created_at IS '创建时间';
+
+COMMENT ON COLUMN dev.scheduler_tokens.name IS 'Token 名称，用于区分调用方';
+COMMENT ON COLUMN dev.scheduler_tokens.token_hash IS 'Token 的 SHA-256 哈希，不存储明文';
+COMMENT ON COLUMN dev.scheduler_tokens.token_prefix IS 'Token 前缀，用于后台识别';
+COMMENT ON COLUMN dev.scheduler_tokens.scope IS 'Token 权限范围，当前固定 checks:run';
+COMMENT ON COLUMN dev.scheduler_tokens.enabled IS '是否启用';
+COMMENT ON COLUMN dev.scheduler_tokens.last_used_at IS '最近使用时间';
+COMMENT ON COLUMN dev.scheduler_tokens.expires_at IS '过期时间，为空表示不过期';
 
 -- RPC: 获取最近历史记录
 CREATE OR REPLACE FUNCTION dev.get_recent_check_history(

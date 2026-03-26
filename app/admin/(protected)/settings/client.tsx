@@ -23,6 +23,17 @@ interface SettingsPageProps {
   envVars: EnvVar[];
 }
 
+interface SchedulerToken {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  scope: string;
+  enabled: boolean;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
   const isSecret = setting.value_type === "secret";
   const [editing, setEditing] = useState(false);
@@ -104,6 +115,11 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
   const [siteConfig, setSiteConfig] = useState<Record<string, string>>(createEmptySiteConfig);
   const [siteConfigSaving, setSiteConfigSaving] = useState(false);
   const [siteConfigMessage, setSiteConfigMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [schedulerTokens, setSchedulerTokens] = useState<SchedulerToken[]>([]);
+  const [schedulerTokenName, setSchedulerTokenName] = useState("Uptime Kuma");
+  const [schedulerTokenSaving, setSchedulerTokenSaving] = useState(false);
+  const [schedulerTokenMessage, setSchedulerTokenMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
@@ -126,9 +142,18 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
     setSiteConfig(nextConfig);
   }, []);
 
+  const loadSchedulerTokens = useCallback(async () => {
+    const res = await fetch("/api/admin/scheduler-tokens");
+    if (!res.ok) {
+      return;
+    }
+
+    setSchedulerTokens(await res.json());
+  }, []);
+
   const loadAll = useCallback(async () => {
-    await Promise.all([loadSettings(), loadSiteConfig()]);
-  }, [loadSettings, loadSiteConfig]);
+    await Promise.all([loadSettings(), loadSiteConfig(), loadSchedulerTokens()]);
+  }, [loadSchedulerTokens, loadSettings, loadSiteConfig]);
 
   useEffect(() => {
     void loadAll();
@@ -171,6 +196,88 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
       setSiteConfigSaving(false);
     }
   }, [loadSiteConfig, siteConfig]);
+
+  const createSchedulerToken = useCallback(async () => {
+    const name = schedulerTokenName.trim();
+    if (!name) {
+      setSchedulerTokenMessage({ type: "err", text: "Token 名称不能为空" });
+      return;
+    }
+
+    setSchedulerTokenSaving(true);
+    setSchedulerTokenMessage(null);
+    setIssuedToken(null);
+
+    try {
+      const res = await fetch("/api/admin/scheduler-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      const data = await res.json().catch(() => ({ error: "创建失败" }));
+      if (!res.ok) {
+        throw new Error(data.error ?? "创建失败");
+      }
+
+      setIssuedToken(data.rawToken ?? null);
+      setSchedulerTokenMessage({ type: "ok", text: "调度 Token 已创建，仅展示一次，请立即保存。" });
+      setSchedulerTokenName("");
+      await loadSchedulerTokens();
+    } catch (error) {
+      setSchedulerTokenMessage({
+        type: "err",
+        text: error instanceof Error ? error.message : "创建失败",
+      });
+    } finally {
+      setSchedulerTokenSaving(false);
+    }
+  }, [loadSchedulerTokens, schedulerTokenName]);
+
+  const updateSchedulerTokenEnabled = useCallback(async (id: string, enabled: boolean) => {
+    const res = await fetch(`/api/admin/scheduler-tokens/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "更新状态失败" }));
+      setSchedulerTokenMessage({ type: "err", text: data.error ?? "更新状态失败" });
+      return;
+    }
+
+    setSchedulerTokenMessage({ type: "ok", text: enabled ? "Token 已启用" : "Token 已停用" });
+    await loadSchedulerTokens();
+  }, [loadSchedulerTokens]);
+
+  const deleteSchedulerToken = useCallback(async (id: string) => {
+    const res = await fetch(`/api/admin/scheduler-tokens/${id}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "删除失败" }));
+      setSchedulerTokenMessage({ type: "err", text: data.error ?? "删除失败" });
+      return;
+    }
+
+    setSchedulerTokenMessage({ type: "ok", text: "Token 已删除" });
+    await loadSchedulerTokens();
+  }, [loadSchedulerTokens]);
+
+  const copyIssuedToken = useCallback(async () => {
+    if (!issuedToken) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(issuedToken);
+      setSchedulerTokenMessage({ type: "ok", text: "Token 已复制到剪贴板" });
+    } catch {
+      setSchedulerTokenMessage({ type: "err", text: "复制失败，请手动复制" });
+    }
+  }, [issuedToken]);
 
   return (
     <div className="space-y-6">
@@ -246,6 +353,136 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section className="rounded-xl border border-border overflow-hidden">
+        <div className="border-b border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
+          <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">调度 API Token</p>
+            <p className="text-xs text-muted-foreground mt-0.5">供 Uptime Kuma、Cloudflare Cron 等外部调度器调用内部批量检测接口</p>
+          </div>
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
+            <p>调用地址：<code className="rounded bg-muted px-1.5 py-0.5">POST /api/internal/checks/run</code></p>
+            <p>认证方式：<code className="rounded bg-muted px-1.5 py-0.5">Authorization: Bearer &lt;token&gt;</code></p>
+            <p>请求体示例：<code className="rounded bg-muted px-1.5 py-0.5">{`{"failOnIssues":true}`}</code></p>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-3 md:flex-row md:items-end">
+            <div className="flex-1 space-y-1.5">
+              <label htmlFor="scheduler-token-name" className="text-xs font-medium text-muted-foreground">Token 名称</label>
+              <input
+                id="scheduler-token-name"
+                value={schedulerTokenName}
+                onChange={(e) => setSchedulerTokenName(e.target.value)}
+                placeholder="如：Uptime Kuma"
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void createSchedulerToken()}
+              disabled={schedulerTokenSaving}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {schedulerTokenSaving ? "生成中…" : "生成 Token"}
+            </button>
+          </div>
+
+          {issuedToken && (
+            <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-xs font-medium text-amber-700">请立即保存这个 Token，离开页面后将无法再次查看明文。</p>
+              <code className="block break-all rounded bg-background px-3 py-2 text-xs">{issuedToken}</code>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyIssuedToken()}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  复制 Token
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIssuedToken(null)}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  我已保存
+                </button>
+              </div>
+            </div>
+          )}
+
+          {schedulerTokenMessage && (
+            <div className={`flex items-center gap-1.5 text-xs rounded-lg px-3 py-2 ${
+              schedulerTokenMessage.type === "ok"
+                ? "bg-emerald-500/10 text-emerald-600"
+                : "bg-destructive/10 text-destructive"
+            }`}>
+              {schedulerTokenMessage.type === "ok" ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+              {schedulerTokenMessage.text}
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">名称</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">前缀</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">最近使用</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">状态</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {schedulerTokens.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">暂无调度 Token</td>
+                  </tr>
+                )}
+                {schedulerTokens.map((token) => (
+                  <tr key={token.id}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{token.name}</div>
+                      <div className="text-xs text-muted-foreground">{token.scope}</div>
+                    </td>
+                    <td className="px-4 py-3"><code className="rounded bg-muted px-1.5 py-0.5 text-xs">{token.tokenPrefix}…</code></td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{token.lastUsedAt ?? "未使用"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
+                        token.enabled
+                          ? "bg-emerald-500/10 text-emerald-600"
+                          : "bg-muted text-muted-foreground"
+                      }`}>
+                        {token.enabled ? "启用中" : "已停用"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void updateSchedulerTokenEnabled(token.id, !token.enabled)}
+                          className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                        >
+                          {token.enabled ? "停用" : "启用"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteSchedulerToken(token.id)}
+                          className="rounded-md border border-border px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       {envVars.length > 0 && (

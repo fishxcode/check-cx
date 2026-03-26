@@ -5,15 +5,12 @@
 
 import {historySnapshotStore} from "../database/history";
 import {loadProviderConfigsFromDB} from "../database/config-loader";
-import {clearAvailabilityStatsCache} from "../database/availability";
-import {runProviderChecks} from "../providers";
-import {evaluateAlerts} from "./alert-engine";
 import {getLastPingStartedAt, setLastPingStartedAt, setPollerRunning} from "./global-state";
 import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
 import {getPollingIntervalMs} from "./polling-config";
-import {sendPollSummary} from "./poll-summary";
 import {refreshSiteSettings} from "./site-settings";
 import type {CheckResult, HealthStatus} from "../types";
+import {runChecksForConfigs} from "./config-check-execution";
 
 export interface PollExecutionOptions {
   forceRefreshConfigs?: boolean;
@@ -199,7 +196,7 @@ export async function runPollExecution(
       return buildSkippedResult(source, "没有可执行的启用配置", startedAtMs, allConfigs.length);
     }
 
-    const results = await runProviderChecks(configs);
+    const results = await runChecksForConfigs(configs);
 
     console.log("[check-cx] 本轮检测明细：");
     results.forEach((result) => {
@@ -221,18 +218,6 @@ export async function runPollExecution(
         } | message=${sanitizedMessage || "无"}`
       );
     });
-
-    console.log(`[check-cx] 正在写入历史记录（${results.length} 条）…`);
-    await historySnapshotStore.append(results);
-    clearAvailabilityStatsCache();
-    await Promise.allSettled(
-      results.map((result) =>
-        evaluateAlerts(result.id, result.name, result.status, result.latencyMs ?? null)
-      )
-    );
-    await sendPollSummary(results).catch((error) =>
-      console.error("[check-cx] 汇总推送失败", error)
-    );
 
     return buildExecutedResult(source, startedAtMs, allConfigs.length, results);
   } catch (error) {
