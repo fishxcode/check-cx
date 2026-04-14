@@ -5,7 +5,7 @@ import "@/lib/core/poller";
 import NextTopLoader from "nextjs-toploader";
 import {ThemeProvider} from "@/components/theme-provider";
 import {NotificationBanner} from "@/components/notification-banner";
-import {getSiteSettingSync, refreshSiteSettings} from "@/lib/core/site-settings";
+import {getSiteSeoConfig, toAbsoluteUrl} from "@/lib/core/site-seo";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,17 +18,39 @@ const geistMono = Geist_Mono({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  // 刷新配置缓存
-  await refreshSiteSettings();
-
-  // 读取配置或使用默认值
-  const title = getSiteSettingSync("site.title", "LINUX DO - 模型中转状态检测");
-  const description = getSiteSettingSync("site.description", "实时检测 OpenAI / Gemini / Anthropic 对话接口的可用性与延迟");
-  const faviconUrl = getSiteSettingSync("site.favicon_url", "/favicon.png");
+  const {title, description, faviconUrl, logoUrl, keywords, siteUrl} = await getSiteSeoConfig();
+  const canonical = toAbsoluteUrl("/", siteUrl);
+  const ogImageSource = logoUrl || faviconUrl;
+  const ogImage = toAbsoluteUrl(ogImageSource, siteUrl) ?? ogImageSource;
 
   return {
-    title,
+    metadataBase: siteUrl ? new URL(siteUrl) : undefined,
+    title: {
+      default: title,
+      template: `%s | ${title}`,
+    },
     description,
+    keywords,
+    alternates: {
+      canonical: canonical ?? "/",
+      types: {
+        "application/rss+xml": canonical ? canonical.replace(/\/$/, "") + "/rss.xml" : "/rss.xml",
+      },
+    },
+    openGraph: {
+      type: "website",
+      url: canonical ?? undefined,
+      title,
+      description,
+      siteName: title,
+      images: ogImage ? [{url: ogImage}] : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ogImage ? [ogImage] : undefined,
+    },
     icons: {
       icon: faviconUrl,
     },
@@ -36,12 +58,21 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const themeBootScript = `(()=>{
-  const hour = new Date().getHours();
-  const isDark = hour >= 19 || hour < 7;
   const root = document.documentElement;
+  let inIframe = false;
+  try { inIframe = window.self !== window.top; } catch(e) { inIframe = true; }
+
+  const hour = new Date().getHours();
+  const isDark = inIframe ? true : (hour >= 19 || hour < 7);
+
+  root.classList.toggle('in-iframe', inIframe);
   root.classList.toggle('dark', isDark);
   root.style.colorScheme = isDark ? 'dark' : 'light';
-  try { if (window.self !== window.top) root.classList.add('in-iframe'); } catch(e) { root.classList.add('in-iframe'); }
+
+  // iframe 场景：强制暗色，并锁定 next-themes 的持久化值，避免被用户/系统偏好覆盖
+  if (inIframe) {
+    try { localStorage.setItem('theme', 'dark'); } catch(e) {}
+  }
 })();`;
 
 export default function RootLayout({

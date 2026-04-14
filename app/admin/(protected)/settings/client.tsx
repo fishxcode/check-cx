@@ -97,6 +97,8 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
 const SITE_CONFIG_KEYS = [
   "site.title",
   "site.description",
+  "site.url",
+  "site.keywords",
   "site.logo_url",
   "site.favicon_url",
   "site.github_url",
@@ -105,6 +107,8 @@ const SITE_CONFIG_KEYS = [
 const createEmptySiteConfig = (): Record<string, string> => ({
   "site.title": "",
   "site.description": "",
+  "site.url": "",
+  "site.keywords": "",
   "site.logo_url": "",
   "site.favicon_url": "",
   "site.github_url": "",

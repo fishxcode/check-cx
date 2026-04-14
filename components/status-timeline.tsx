@@ -16,6 +16,8 @@ interface StatusTimelineProps {
   nextRefreshInMs?: number | null;
   /** 是否处于维护模式 */
   isMaintenance?: boolean;
+  /** 紧凑模式：用于列表视图减少占用高度 */
+  density?: "normal" | "compact";
 }
 
 /** 时间线最多绘制的片段数量 */
@@ -34,7 +36,12 @@ const formatRemainingTime = (ms: number) => {
 const formatLatency = (value: number | null | undefined) =>
   typeof value === "number" ? `${value} ms` : "—";
 
-export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: StatusTimelineProps) {
+export function StatusTimeline({
+  items,
+  nextRefreshInMs,
+  isMaintenance,
+  density = "normal",
+}: StatusTimelineProps) {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeSegmentKey, setActiveSegmentKey] = useState<string | null>(null);
 
@@ -82,19 +89,31 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
   const segmentCount = Math.min(items.length, SEGMENT_LIMIT);
   const nextRefreshLabel =
     typeof nextRefreshInMs === "number" ? formatRemainingTime(nextRefreshInMs) : null;
+  const isCompact = density === "compact";
 
   return (
-    <div className="space-y-3">
+    <div className={cn(isCompact ? "space-y-1.5" : "space-y-2")}>
       {/* Header / Legend */}
-      <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div
+        className={cn(
+          "flex items-center justify-between font-medium uppercase tracking-wider text-muted-foreground",
+          isCompact ? "text-[9px]" : "text-[10px]"
+        )}
+      >
         <div className="flex items-center gap-2">
-          <span>{segmentCount <= 1 ? "History (latest)" : `History (${segmentCount}pts)`}</span>
+          <span>
+            {isCompact
+              ? "History"
+              : segmentCount <= 1
+                ? "History (latest)"
+                : `History (${segmentCount}pts)`}
+          </span>
         </div>
         <div className="flex items-center gap-2">
            {nextRefreshLabel ? (
              <span className="flex items-center gap-1.5 text-primary">
-               <Clock className="h-3 w-3" />
-               Next update in {nextRefreshLabel}
+               <Clock className={cn(isCompact ? "h-2.5 w-2.5" : "h-3 w-3")} />
+               {isCompact ? nextRefreshLabel : `Next update in ${nextRefreshLabel}`}
              </span>
            ) : (
              <span className="opacity-50">Manual Refresh</span>
@@ -103,7 +122,12 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
       </div>
 
       {/* Timeline Bar */}
-      <div className="relative h-8 w-full overflow-hidden rounded-sm bg-muted/20">
+      <div
+        className={cn(
+          "relative w-full overflow-hidden rounded-sm bg-muted/20",
+          isCompact ? "h-6" : "h-7"
+        )}
+      >
         <div className="flex h-full w-full flex-row-reverse gap-[2px] p-[2px]">
           {segments.map((segment, index) => {
             if (!segment) {
@@ -179,10 +203,12 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
       </div>
       
       {/* Axis labels */}
-      <div className="flex justify-between text-[9px] font-medium uppercase tracking-widest text-muted-foreground/50">
-        <span>Past</span>
-        <span>Now</span>
-      </div>
+      {isCompact ? null : (
+        <div className="flex justify-between text-[8px] font-medium uppercase tracking-widest text-muted-foreground/50">
+          <span>Past</span>
+          <span>Now</span>
+        </div>
+      )}
     </div>
   );
 }

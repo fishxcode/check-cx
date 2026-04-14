@@ -38,6 +38,32 @@ export function SiteConfigForm({ data, onChange }: SiteConfigFormProps) {
       </div>
 
       <div className="space-y-1.5">
+        <Label htmlFor="site-url">站点 URL</Label>
+        <Input
+          id="site-url"
+          placeholder="如：https://status.example.com"
+          value={data["site.url"] || ""}
+          onChange={(e) => onChange("site.url", e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          用于 canonical、Open Graph、RSS、sitemap 与 robots
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="site-keywords">页面关键词</Label>
+        <Input
+          id="site-keywords"
+          placeholder="如：AI 状态监控, OpenAI 状态, Gemini 状态"
+          value={data["site.keywords"] || ""}
+          onChange={(e) => onChange("site.keywords", e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          用于 meta keywords，多个关键词用逗号分隔
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
         <Label htmlFor="site-logo-url">Logo URL</Label>
         <Input
           id="site-logo-url"

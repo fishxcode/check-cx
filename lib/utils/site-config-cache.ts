@@ -9,6 +9,7 @@ export interface SiteConfig {
   logoUrl: string;
   faviconUrl: string;
   githubUrl: string;
+  groupOrder?: string[];
 }
 
 let cachedConfig: SiteConfig | null = null;
@@ -51,6 +52,7 @@ export async function getSiteConfig(forceRefresh = false): Promise<SiteConfig> {
     logoUrl: "/favicon.png",
     faviconUrl: "/favicon.png",
     githubUrl: "",
+    groupOrder: undefined,
   };
 }
 

@@ -18,6 +18,21 @@ export async function GET() {
   try {
     const settings = await getAllSiteSettings();
 
+    let groupOrder: string[] | undefined = undefined;
+    const rawOrder = settings["dashboard.group_order"];
+    if (rawOrder && rawOrder.trim()) {
+      try {
+        const parsed = JSON.parse(rawOrder);
+        if (Array.isArray(parsed)) {
+          groupOrder = parsed.filter(
+            (x): x is string => typeof x === "string" && x.trim().length > 0
+          );
+        }
+      } catch {
+        // ignore invalid json
+      }
+    }
+
     // 筛选并返回前台需要的配置
     const siteConfig = {
       title: settings["site.title"] || "Check CX - AI 模型健康监控",
@@ -27,6 +42,7 @@ export async function GET() {
       logoUrl: settings["site.logo_url"] || "/favicon.png",
       faviconUrl: settings["site.favicon_url"] || "/favicon.png",
       githubUrl: settings["site.github_url"] || "",
+      groupOrder,
     };
 
     return NextResponse.json(siteConfig, {
@@ -45,6 +61,8 @@ export async function GET() {
           "实时检测 OpenAI / Gemini / Anthropic 对话接口的可用性与延迟",
         logoUrl: "/favicon.png",
         faviconUrl: "/favicon.png",
+        githubUrl: "",
+        groupOrder: undefined,
       },
       { status: 500 }
     );

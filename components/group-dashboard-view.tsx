@@ -1,10 +1,11 @@
 "use client";
 
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {Activity, ExternalLink, RefreshCcw} from "lucide-react";
+import {Activity, ExternalLink, LayoutGrid, List, RefreshCcw} from "lucide-react";
 
 import {GroupTags} from "@/components/group-tags";
 import {ProviderCard} from "@/components/provider-card";
+import {ProviderListItem} from "@/components/provider-list-item";
 import {ClientTime} from "@/components/client-time";
 import {fetchGroupWithCache, prefetchGroupData, setGroupCache} from "@/lib/core/group-frontend-cache";
 import type {AvailabilityPeriod, ProviderTimeline} from "@/lib/types";
@@ -42,6 +43,8 @@ const PERIOD_OPTIONS: Array<{ value: AvailabilityPeriod; label: string }> = [
   { value: "30d", label: "30 天" },
 ];
 
+type ViewMode = "card" | "list";
+
 /** Tech-style decorative corner plus marker */
 const CornerPlus = ({ className }: { className?: string }) => (
   <svg 
@@ -66,6 +69,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
   const [selectedPeriod, setSelectedPeriod] = useState<AvailabilityPeriod>(
     initialData.trendPeriod ?? "7d"
   );
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lockRef = useRef(false);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
@@ -130,6 +134,11 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
       return;
     }
 
+    const savedViewMode = localStorage.getItem("check-cx-view-mode");
+    if (savedViewMode && ["card", "list"].includes(savedViewMode)) {
+      setViewMode(savedViewMode as ViewMode);
+    }
+
     const media = window.matchMedia("(pointer: coarse)");
 
     const updatePointerType = () => {
@@ -142,6 +151,12 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
 
     return () => media.removeEventListener("change", updatePointerType);
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("check-cx-view-mode", viewMode);
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (!isCoarsePointer) {
@@ -213,7 +228,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
       <CornerPlus className="fixed bottom-4 left-4 h-6 w-6 text-border md:bottom-8 md:left-8" />
       <CornerPlus className="fixed bottom-4 right-4 h-6 w-6 text-border md:bottom-8 md:right-8" />
 
-      <header className="relative z-10 mb-8 flex flex-col justify-between gap-6 sm:mb-12 sm:gap-8 lg:flex-row lg:items-end">
+      <header className="relative z-10 mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:gap-6 lg:flex-row lg:items-end">
         <div className="space-y-4">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
@@ -225,7 +240,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
+            <h1 className="max-w-2xl text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl md:text-5xl">
               {displayName}
             </h1>
             <GroupTags tags={data.tags} />
@@ -287,6 +302,38 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
         </div>
 
         <div className="flex flex-col items-start gap-4 lg:items-end">
+          <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="pl-1">视图</span>
+            <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("card")}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                  viewMode === "card"
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <LayoutGrid className="h-3 w-3" />
+                卡片
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                  viewMode === "list"
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List className="h-3 w-3" />
+                列表
+              </button>
+            </div>
+          </div>
+
            <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
              <span className="pl-1">可用性区间</span>
              <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
@@ -349,20 +396,34 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
             <h3 className="text-lg font-semibold">该分组下暂无配置</h3>
           </div>
       ) : (
-        <section className={`grid gap-6 ${gridColsClass}`}>
-          {providerTimelines.map((timeline) => (
-            <ProviderCard
-              key={timeline.id}
-              timeline={timeline}
-              timeToNextRefresh={timeToNextRefresh}
-              isCoarsePointer={isCoarsePointer}
-              activeOfficialCardId={activeOfficialCardId}
-              setActiveOfficialCardId={setActiveOfficialCardId}
-              availabilityStats={availabilityStats[timeline.id]}
-              selectedPeriod={selectedPeriod}
-            />
-          ))}
-        </section>
+        viewMode === "list" ? (
+          <section className="space-y-2">
+            {providerTimelines.map((timeline) => (
+              <ProviderListItem
+                key={timeline.id}
+                timeline={timeline}
+                timeToNextRefresh={timeToNextRefresh}
+                availabilityStats={availabilityStats[timeline.id]}
+                selectedPeriod={selectedPeriod}
+              />
+            ))}
+          </section>
+        ) : (
+          <section className={`grid gap-4 ${gridColsClass}`}>
+            {providerTimelines.map((timeline) => (
+              <ProviderCard
+                key={timeline.id}
+                timeline={timeline}
+                timeToNextRefresh={timeToNextRefresh}
+                isCoarsePointer={isCoarsePointer}
+                activeOfficialCardId={activeOfficialCardId}
+                setActiveOfficialCardId={setActiveOfficialCardId}
+                availabilityStats={availabilityStats[timeline.id]}
+                selectedPeriod={selectedPeriod}
+              />
+            ))}
+          </section>
+        )
       )}
     </div>
   );

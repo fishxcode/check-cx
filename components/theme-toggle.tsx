@@ -8,10 +8,24 @@ import {Button} from "@/components/ui/button"
 export function ThemeToggle() {
   const { setTheme, theme } = useTheme()
   const [mounted, setMounted] = React.useState(false)
+  const [inIframe] = React.useState(() => {
+    if (typeof document === "undefined") return false
+    return document.documentElement.classList.contains("in-iframe")
+  })
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
+
+  React.useEffect(() => {
+    if (inIframe) {
+      setTheme("dark")
+    }
+  }, [inIframe, setTheme])
+
+  if (inIframe) {
+    return null
+  }
 
   if (!mounted) {
     return (

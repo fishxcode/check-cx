@@ -1,6 +1,6 @@
 "use client";
 
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {fetchWithCache, prefetchDashboardData, setCache} from "@/lib/core/frontend-cache";
 import {prefetchGroupData} from "@/lib/core/group-frontend-cache";
 import Link from "next/link";
@@ -10,6 +10,8 @@ import {
   ExternalLink,
   Github,
   GripVertical,
+  LayoutGrid,
+  List,
   RefreshCcw,
   Search,
   Settings,
@@ -35,6 +37,7 @@ import {CSS} from "@dnd-kit/utilities";
 
 import {GroupTags} from "@/components/group-tags";
 import {ProviderCard} from "@/components/provider-card";
+import {ProviderListItem} from "@/components/provider-list-item";
 import {ThemeToggle} from "@/components/theme-toggle";
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
 import {ClientTime} from "@/components/client-time";
@@ -87,6 +90,7 @@ const PERIOD_OPTIONS: Array<{ value: AvailabilityPeriod; label: string }> = [
 ];
 
 type SortMode = "custom" | "group" | "name";
+type ViewMode = "card" | "list";
 
 const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "custom", label: "自定义" },
@@ -221,7 +225,9 @@ interface GroupPanelProps {
   gridColsClass: string;
   availabilityStats: AvailabilityStatsMap;
   selectedPeriod: AvailabilityPeriod;
-  defaultOpen?: boolean;
+  viewMode: ViewMode;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 
@@ -259,11 +265,11 @@ function GroupPanel({
   gridColsClass,
   availabilityStats,
   selectedPeriod,
-  defaultOpen = false,
+  viewMode,
+  isOpen,
+  onOpenChange,
   dragHandleProps,
 }: GroupPanelProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
   const statusSummary = useMemo(() => {
     const counts = { operational: 0, degraded: 0, failed: 0, validation_failed: 0, maintenance: 0, error: 0 };
     for (const timeline of group.timelines) {
@@ -280,8 +286,11 @@ function GroupPanel({
   return (
     <Collapsible
       open={isOpen}
-      onOpenChange={setIsOpen}
-      className="rounded-3xl border bg-white/30 p-4 backdrop-blur-sm dark:bg-black/10 sm:p-6"
+      onOpenChange={onOpenChange}
+      className={cn(
+        "border border-border/50 bg-background/40 backdrop-blur-sm",
+        viewMode === "list" ? "rounded-2xl px-3 py-3" : "rounded-3xl p-4 sm:p-6"
+      )}
     >
       <div className="flex items-center justify-between gap-3 sm:gap-4">
         {dragHandleProps && (
@@ -369,20 +378,34 @@ function GroupPanel({
       </div>
 
       <CollapsibleContent className="animate-in fade-in-0 slide-in-from-top-2">
-        <div className={`mt-2 grid gap-6 ${gridColsClass}`}>
-          {group.timelines.map((timeline) => (
-            <ProviderCard
-              key={timeline.id}
-              timeline={timeline}
-              timeToNextRefresh={timeToNextRefresh}
-              isCoarsePointer={isCoarsePointer}
-              activeOfficialCardId={activeOfficialCardId}
-              setActiveOfficialCardId={setActiveOfficialCardId}
-              availabilityStats={availabilityStats[timeline.id]}
-              selectedPeriod={selectedPeriod}
-            />
-          ))}
-        </div>
+        {viewMode === "list" ? (
+          <div className="mt-2.5 space-y-2">
+            {group.timelines.map((timeline) => (
+              <ProviderListItem
+                key={timeline.id}
+                timeline={timeline}
+                timeToNextRefresh={timeToNextRefresh}
+                availabilityStats={availabilityStats[timeline.id]}
+                selectedPeriod={selectedPeriod}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className={`mt-2 grid gap-4 ${gridColsClass}`}>
+            {group.timelines.map((timeline) => (
+              <ProviderCard
+                key={timeline.id}
+                timeline={timeline}
+                timeToNextRefresh={timeToNextRefresh}
+                isCoarsePointer={isCoarsePointer}
+                activeOfficialCardId={activeOfficialCardId}
+                setActiveOfficialCardId={setActiveOfficialCardId}
+                availabilityStats={availabilityStats[timeline.id]}
+                selectedPeriod={selectedPeriod}
+              />
+            ))}
+          </div>
+        )}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -418,6 +441,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     data.trendPeriod ?? "7d"
   );
   const [sortMode, setSortMode] = useState<SortMode>("custom");
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
+  const [openGroupNames, setOpenGroupNames] = useState<Set<string>>(() => new Set());
+  const prevSearchActiveRef = useRef(false);
 
   const initialGroupedTimelines = useMemo(
     () => buildGroupedTimelines(initialData.providerTimelines, initialData.groupInfos),
@@ -436,10 +462,19 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     [groupedTimelines]
   );
 
-  // Initialize order with default data
-  const [orderedGroupNames, setOrderedGroupNames] = useState<string[]>(() => 
-    initialGroupedTimelines.map((g) => g.groupName)
-  );
+  const persistedGroupOrder = siteConfig?.groupOrder;
+
+  // Initialize order with server-provided (persisted) order when available
+  const [orderedGroupNames, setOrderedGroupNames] = useState<string[]>(() => {
+    const currentNames = initialGroupedTimelines.map((g) => g.groupName);
+    if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
+      return currentNames;
+    }
+    const currentSet = new Set(currentNames);
+    const validSaved = persistedGroupOrder.filter((name) => currentSet.has(name));
+    const newNames = currentNames.filter((name) => !validSaved.includes(name));
+    return [...validSaved, ...newNames];
+  });
 
   const latestCheckTimestamp = useMemo(
     () => getLatestCheckTimestamp(data.providerTimelines),
@@ -470,24 +505,28 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         setSortMode(savedSortMode as SortMode);
       }
 
-      // Load group order
-      const saved = localStorage.getItem("check-cx-group-order");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setOrderedGroupNames(() => {
-              const currentSet = new Set(initialGroupedTimelines.map((group) => group.groupName));
-              // Filter out saved names that no longer exist, and add new ones
-              const validSaved = parsed.filter(name => currentSet.has(name));
-              const newNames = initialGroupedTimelines
-                .map((group) => group.groupName)
-                .filter(name => !validSaved.includes(name));
-              return [...validSaved, ...newNames];
-            });
+      // Load group order from localStorage only when server has no persisted order
+      if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
+        const saved = localStorage.getItem("check-cx-group-order");
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setOrderedGroupNames(() => {
+                const currentSet = new Set(
+                  initialGroupedTimelines.map((group) => group.groupName)
+                );
+                // Filter out saved names that no longer exist, and add new ones
+                const validSaved = parsed.filter((name) => currentSet.has(name));
+                const newNames = initialGroupedTimelines
+                  .map((group) => group.groupName)
+                  .filter((name) => !validSaved.includes(name));
+                return [...validSaved, ...newNames];
+              });
+            }
+          } catch (e) {
+            console.error("Failed to parse group order", e);
           }
-        } catch (e) {
-          console.error("Failed to parse group order", e);
         }
       }
 
@@ -503,8 +542,14 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           console.error("Failed to parse selected tags", e);
         }
       }
+
+      // Load view mode
+      const savedViewMode = localStorage.getItem("check-cx-view-mode");
+      if (savedViewMode && ["card", "list"].includes(savedViewMode)) {
+        setViewMode(savedViewMode as ViewMode);
+      }
     }
-  }, [initialGroupedTimelines]);
+  }, [initialGroupedTimelines, persistedGroupOrder]);
 
   // Save sort mode to localStorage when it changes
   useEffect(() => {
@@ -519,6 +564,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       localStorage.setItem("check-cx-selected-tags", JSON.stringify(selectedTags));
     }
   }, [selectedTags]);
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("check-cx-view-mode", viewMode);
+    }
+  }, [viewMode]);
 
   // Sync when data updates (e.g. polling adds/removes groups)
   useEffect(() => {
@@ -541,6 +593,30 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     });
   }, [groupedNames]);
 
+  const handleGroupOpenChange = useCallback((groupName: string, open: boolean) => {
+    setOpenGroupNames((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(groupName);
+      else next.delete(groupName);
+      return next;
+    });
+  }, []);
+
+  const persistGroupOrderToDb = useCallback(async (order: string[]) => {
+    try {
+      const res = await fetch("/api/admin/dashboard-order", {
+        method: "PUT",
+        redirect: "manual",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({groupOrder: order}),
+      });
+      // 非管理员/未登录：忽略（仍保留 localStorage 行为）
+      if (!res.ok) return;
+    } catch {
+      // 静默失败，避免影响拖拽体验
+    }
+  }, []);
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const {active, over} = event;
     
@@ -554,11 +630,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         if (typeof window !== "undefined") {
           localStorage.setItem("check-cx-group-order", JSON.stringify(newOrder));
         }
+
+        void persistGroupOrderToDb(newOrder);
         
         return newOrder;
       });
     }
-  }, []);
+  }, [persistGroupOrderToDb]);
 
   const refresh = useCallback(
     async (
@@ -779,6 +857,28 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     return result;
   }, [groupedNames, groupedTimelineMap, orderedGroupNames, searchQuery, selectedTags, sortMode]);
 
+  // 搜索从无到有时：自动展开当前筛选结果（保留原“搜索时自动展开”语义）
+  useEffect(() => {
+    const active = Boolean(searchQuery.trim());
+    if (!prevSearchActiveRef.current && active) {
+      setOpenGroupNames((prev) => {
+        const next = new Set(prev);
+        for (const name of filteredGroupNames) {
+          next.add(name);
+        }
+        return next;
+      });
+    }
+    prevSearchActiveRef.current = active;
+  }, [filteredGroupNames, searchQuery]);
+
+  const setAllGroupsOpen = useCallback(
+    (open: boolean) => {
+      setOpenGroupNames(() => (open ? new Set(filteredGroupNames) : new Set()));
+    },
+    [filteredGroupNames]
+  );
+
   const groupedPanels = filteredGroupNames.length === 0 ? (
     <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
       <div className="mb-4 rounded-full bg-muted/50 p-4">
@@ -804,6 +904,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       {filteredGroupNames.map((groupName) => {
         const group = groupedTimelineMap.get(groupName);
         if (!group) return null;
+        const isOpen = openGroupNames.has(groupName);
         const commonProps = {
           group,
           timeToNextRefresh,
@@ -813,8 +914,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           gridColsClass,
           availabilityStats,
           selectedPeriod,
-          // 搜索活跃时自动展开包含匹配结果的分组
-          defaultOpen: searchQuery.trim() ? true : false,
+          viewMode,
+          isOpen,
+          onOpenChange: (open: boolean) => handleGroupOpenChange(groupName, open),
         };
         // Only enable drag-and-drop in custom sort mode
         return isDndReady && sortMode === "custom" ? (
@@ -838,7 +940,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
        <CornerPlus className="fixed bottom-4 left-4 h-6 w-6 text-border md:bottom-8 md:left-8" />
        <CornerPlus className="fixed bottom-4 right-4 h-6 w-6 text-border md:bottom-8 md:right-8" />
 
-      <header className="relative z-10 mb-8 flex flex-col justify-between gap-6 sm:mb-12 sm:gap-8 lg:flex-row lg:items-end">
+      <header className="relative z-10 mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:gap-6 lg:flex-row lg:items-end">
         <div className="space-y-4">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-foreground text-background sm:h-8 sm:w-8">
@@ -882,11 +984,11 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
             </Link>
           </div>
           
-          <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl md:text-6xl">
+          <h1 className="max-w-2xl text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl md:text-5xl">
             {siteTitle}
           </h1>
           
-          <div className="flex max-w-lg flex-col gap-2 text-sm text-muted-foreground sm:text-base">
+          <div className="flex max-w-lg flex-col gap-1.5 text-sm text-muted-foreground sm:text-base">
              <p className="leading-relaxed">{siteDescription}</p>
           </div>
         </div>
@@ -894,13 +996,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         <div className="flex flex-col items-start gap-3 sm:gap-4 lg:items-end">
            {/* Search Box - only show when multiple groups exist */}
            {hasMultipleGroups && (
-             <div className="relative w-full sm:w-64">
+             <div className="relative w-full sm:w-60">
                <input
                  type="text"
                  placeholder="搜索分组或 Provider（名称、类型、状态）..."
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
-                 className="h-10 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                 className="h-9 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
                />
                <Search
                  aria-hidden="true"
@@ -972,6 +1074,62 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                      {option.label}
                    </button>
                  ))}
+               </div>
+             </div>
+          )}
+
+           {/* View Mode Selector */}
+           <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+             <span className="pl-1">视图</span>
+             <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
+               <button
+                 type="button"
+                 onClick={() => setViewMode("card")}
+                 className={cn(
+                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                   viewMode === "card"
+                     ? "bg-foreground text-background"
+                     : "text-muted-foreground hover:text-foreground"
+                 )}
+               >
+                 <LayoutGrid className="h-3 w-3" />
+                 卡片
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setViewMode("list")}
+                 className={cn(
+                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                   viewMode === "list"
+                     ? "bg-foreground text-background"
+                     : "text-muted-foreground hover:text-foreground"
+                 )}
+               >
+                 <List className="h-3 w-3" />
+                 列表
+               </button>
+             </div>
+           </div>
+
+           {/* Expand/Collapse All */}
+           {hasMultipleGroups && (
+             <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+               <span className="pl-1">分组</span>
+               <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
+                 <button
+                   type="button"
+                   onClick={() => setAllGroupsOpen(true)}
+                   className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                 >
+                   展开
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => setAllGroupsOpen(false)}
+                   className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                 >
+                   折叠
+                 </button>
                </div>
              </div>
            )}
@@ -1057,20 +1215,34 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
             groupedPanels
           )
         ) : (
-          <div className={`grid gap-6 ${gridColsClass}`}>
-            {providerTimelines.map((timeline) => (
-              <ProviderCard
-                key={timeline.id}
-                timeline={timeline}
-                timeToNextRefresh={timeToNextRefresh}
-                isCoarsePointer={isCoarsePointer}
-                activeOfficialCardId={activeOfficialCardId}
-                setActiveOfficialCardId={setActiveOfficialCardId}
-                availabilityStats={availabilityStats[timeline.id]}
-                selectedPeriod={selectedPeriod}
-              />
-            ))}
-          </div>
+          viewMode === "list" ? (
+            <div className="space-y-2">
+              {providerTimelines.map((timeline) => (
+                <ProviderListItem
+                  key={timeline.id}
+                  timeline={timeline}
+                  timeToNextRefresh={timeToNextRefresh}
+                  availabilityStats={availabilityStats[timeline.id]}
+                  selectedPeriod={selectedPeriod}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className={`grid gap-4 ${gridColsClass}`}>
+              {providerTimelines.map((timeline) => (
+                <ProviderCard
+                  key={timeline.id}
+                  timeline={timeline}
+                  timeToNextRefresh={timeToNextRefresh}
+                  isCoarsePointer={isCoarsePointer}
+                  activeOfficialCardId={activeOfficialCardId}
+                  setActiveOfficialCardId={setActiveOfficialCardId}
+                  availabilityStats={availabilityStats[timeline.id]}
+                  selectedPeriod={selectedPeriod}
+                />
+              ))}
+            </div>
+          )
         )}
       </main>
     </div>

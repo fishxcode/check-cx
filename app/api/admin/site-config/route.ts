@@ -24,6 +24,8 @@ export async function GET() {
     .in("key", [
       "site.title",
       "site.description",
+      "site.url",
+      "site.keywords",
       "site.logo_url",
       "site.favicon_url",
       "site.github_url",
@@ -57,6 +59,8 @@ export async function PUT(request: NextRequest) {
   const allowedKeys = [
     "site.title",
     "site.description",
+    "site.url",
+    "site.keywords",
     "site.logo_url",
     "site.favicon_url",
     "site.github_url",
