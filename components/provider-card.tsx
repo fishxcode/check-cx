@@ -89,32 +89,29 @@ export function ProviderCard({
       )}
 
       <div className={cn("flex-1 p-4 sm:p-5", banner && "opacity-60")}>
-        <div className="mb-4 flex items-start justify-between">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="mb-4">
+          <h3 className="line-clamp-2 text-base font-bold leading-tight tracking-tight text-foreground sm:text-lg md:text-xl lg:text-2xl">
+            {latest.name}
+          </h3>
+
+          <div className="mt-2.5 flex items-center gap-3">
             <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white/80 to-white/20 shadow-sm ring-1 ring-black/5 transition-transform group-hover:scale-105 dark:from-white/10 dark:to-white/5 dark:ring-white/10 sm:h-12 sm:w-12 sm:rounded-2xl">
               <div className="scale-75 sm:scale-100">
                 <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
               </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="flex-1 truncate text-base font-bold leading-none tracking-tight text-foreground sm:text-lg">
-                  {latest.name}
-                </h3>
-                <Badge
-                  variant={preset.badge}
-                  className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-xs"
-                >
-                  {preset.label}
-                </Badge>
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
-                  {PROVIDER_LABEL[latest.type]}
-                </span>
-                <span className="break-all font-mono opacity-60">{latest.model}</span>
-              </div>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
+                {PROVIDER_LABEL[latest.type]}
+              </span>
+              <span className="truncate font-mono opacity-60">{latest.model}</span>
             </div>
+            <Badge
+              variant={preset.badge}
+              className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-xs"
+            >
+              {preset.label}
+            </Badge>
           </div>
         </div>
 
