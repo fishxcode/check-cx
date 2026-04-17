@@ -100,11 +100,11 @@ export function ProviderCard({
                 <ProviderIcon type={latest.type} size={26} className="text-foreground/80" />
               </div>
             </div>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-semibold text-foreground/70">
                 {PROVIDER_LABEL[latest.type]}
               </span>
-              <span className="truncate font-mono opacity-60">{latest.model}</span>
+              <span className="truncate font-mono font-medium text-foreground/50">{latest.model}</span>
             </div>
             <Badge
               variant={preset.badge}
