@@ -41,6 +41,7 @@ export interface GlobalGroupHealthItem {
 export interface GlobalGroupHealthSummary {
   available: boolean;
   enabled: boolean;
+  showErrorReasons: boolean;
   updatedAt: string | null;
   defaultWindow: GlobalGroupHealthWindow;
   windows: GlobalGroupHealthWindow[];

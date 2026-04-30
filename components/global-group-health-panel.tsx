@@ -47,6 +47,7 @@ const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
 
 const TROUBLESHOOTING_URL =
   "https://doc.fishxcode.com/faq#%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E5%92%8C%E7%90%86%E8%A7%A3%E9%94%99%E8%AF%AF%E6%97%A5%E5%BF%97";
+const PRICING_URL = "https://fishxcode.com/pricing";
 
 export function GlobalGroupHealthPanel({
   summary,
@@ -59,15 +60,18 @@ export function GlobalGroupHealthPanel({
   showDetailLink = true,
 }: GlobalGroupHealthPanelProps) {
   const [internalOpen, setInternalOpen] = useState(true);
+  const [localSummary, setLocalSummary] = useState(summary);
+  const [loadingWindow, setLoadingWindow] = useState<GlobalGroupHealthWindow | null>(null);
   const [selectedWindow, setSelectedWindow] = useState<GlobalGroupHealthWindow>(
     summary?.defaultWindow ?? "24h"
   );
 
   const open = isOpen ?? internalOpen;
   const handleOpenChange = onOpenChange ?? setInternalOpen;
-  const available = summary?.available === true;
+  const activeSummary = localSummary ?? summary;
+  const available = activeSummary?.available === true;
   const items = useMemo(() => {
-    const baseItems = summary?.itemsByWindow[selectedWindow] ?? [];
+    const baseItems = activeSummary?.itemsByWindow[selectedWindow] ?? [];
     const query = searchQuery.trim().toLowerCase();
     const filtered = query
       ? baseItems.filter((item) => itemMatchesQuery(item, query))
@@ -78,9 +82,9 @@ export function GlobalGroupHealthPanel({
     }
 
     return [...filtered].sort((a, b) => a.group.localeCompare(b.group));
-  }, [searchQuery, selectedWindow, sortMode, summary?.itemsByWindow]);
+  }, [activeSummary?.itemsByWindow, searchQuery, selectedWindow, sortMode]);
 
-  if (!summary || summary.enabled === false) {
+  if (!activeSummary || activeSummary.enabled === false) {
     return null;
   }
 
@@ -91,12 +95,50 @@ export function GlobalGroupHealthPanel({
     },
     { operational: 0, degraded: 0, failed: 0 }
   );
+  const showErrorReasons = activeSummary.showErrorReasons === true;
   const hasFault = statusSummary.failed > 0 || items.some((item) => item.errorReasons.length > 0);
   const emptyMessage = available
     ? searchQuery.trim()
       ? "当前搜索条件下没有匹配的全局分组"
       : `最近 ${WINDOW_LABEL[selectedWindow]} 暂无全局分组日志`
-    : summary?.message ?? "全局分组监控暂不可用";
+    : activeSummary?.message ?? "全局分组监控暂不可用";
+  const handleWindowChange = async (window: GlobalGroupHealthWindow) => {
+    setSelectedWindow(window);
+    const hasWindowData = (activeSummary.itemsByWindow[window] ?? []).length > 0;
+    if (hasWindowData || loadingWindow === window) {
+      return;
+    }
+
+    setLoadingWindow(window);
+    try {
+      const response = await fetch(`/api/global-group-health?window=${window}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`global_group_health_${response.status}`);
+      }
+      const nextSummary = (await response.json()) as GlobalGroupHealthSummary;
+      setLocalSummary((prev) => {
+        const base = prev ?? activeSummary;
+        return {
+          ...base,
+          available: nextSummary.available,
+          enabled: nextSummary.enabled,
+          updatedAt: nextSummary.updatedAt ?? base.updatedAt,
+          message: nextSummary.message,
+          showErrorReasons: nextSummary.showErrorReasons,
+          itemsByWindow: {
+            ...base.itemsByWindow,
+            [window]: nextSummary.itemsByWindow[window] ?? [],
+          },
+        };
+      });
+    } catch {
+      toast.error(`${WINDOW_LABEL[window]} 全局分组读取失败`);
+    } finally {
+      setLoadingWindow(null);
+    }
+  };
 
   return (
     <Collapsible
@@ -150,9 +192,9 @@ export function GlobalGroupHealthPanel({
                 </span>
               )}
               <span className="whitespace-nowrap">最近 {WINDOW_LABEL[selectedWindow]}</span>
-              {summary.updatedAt && (
+              {activeSummary.updatedAt && (
                 <span className="whitespace-nowrap">
-                  更新于 <ClientTime value={summary.updatedAt} />
+                  更新于 <ClientTime value={activeSummary.updatedAt} />
                 </span>
               )}
             </div>
@@ -187,19 +229,19 @@ export function GlobalGroupHealthPanel({
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:w-fit">
           <span className="pl-1">历史窗口</span>
           <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
-            {summary.windows.map((window) => (
+            {activeSummary.windows.map((window) => (
               <button
                 key={window}
                 type="button"
-                onClick={() => setSelectedWindow(window)}
+                onClick={() => void handleWindowChange(window)}
                 className={cn(
-                  "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                  "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95",
                   selectedWindow === window
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {WINDOW_LABEL[window]}
+                {loadingWindow === window ? "加载中" : WINDOW_LABEL[window]}
               </button>
             ))}
           </div>
@@ -212,11 +254,20 @@ export function GlobalGroupHealthPanel({
             )}
           >
             {items.map((item) => (
-              <GlobalGroupHealthCard key={item.group} item={item} viewMode={viewMode} />
+              <GlobalGroupHealthCard
+                key={item.group}
+                item={item}
+                viewMode={viewMode}
+                showErrorReasons={showErrorReasons}
+              />
             ))}
           </div>
         ) : (
-          <GlobalGroupHealthEmptyState available={available} message={emptyMessage} />
+          <GlobalGroupHealthEmptyState
+            available={available}
+            loading={loadingWindow === selectedWindow}
+            message={loadingWindow === selectedWindow ? "正在读取该历史窗口..." : emptyMessage}
+          />
         )}
       </CollapsibleContent>
     </Collapsible>
@@ -225,19 +276,21 @@ export function GlobalGroupHealthPanel({
 
 function GlobalGroupHealthEmptyState({
   available,
+  loading,
   message,
 }: {
   available: boolean;
+  loading?: boolean;
   message: string;
 }) {
   const Icon = available ? Search : AlertCircle;
   return (
     <div className="mt-3 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/20 px-4 py-8 text-center">
       <div className="mb-3 rounded-full bg-muted/50 p-3">
-        <Icon className="h-5 w-5 text-muted-foreground" />
+        <Icon className={cn("h-5 w-5 text-muted-foreground", loading && "animate-pulse")} />
       </div>
       <h3 className="text-sm font-semibold">
-        {available ? "没有全局分组数据" : "全局分组监控暂不可用"}
+        {loading ? "正在加载全局分组数据" : available ? "没有全局分组数据" : "全局分组监控暂不可用"}
       </h3>
       <p className="mt-1 max-w-xl text-xs text-muted-foreground">{message}</p>
     </div>
@@ -247,9 +300,11 @@ function GlobalGroupHealthEmptyState({
 function GlobalGroupHealthCard({
   item,
   viewMode,
+  showErrorReasons,
 }: {
   item: GlobalGroupHealthItem;
   viewMode: GlobalGroupHealthViewMode;
+  showErrorReasons: boolean;
 }) {
   const preset = STATUS_META[item.status];
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackState>(null);
@@ -278,13 +333,13 @@ function GlobalGroupHealthCard({
             <div className="flex items-center gap-2">
               <span className={cn("h-2 w-2 shrink-0 rounded-full", preset.dot)} />
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">{item.group}</div>
+                <GroupPricingLink group={item.group} className="text-sm font-semibold" />
                 <div className="truncate text-[10px] font-medium text-muted-foreground">
                   fishxcode · 最近 <ClientTime value={item.lastSeenAt} />
                 </div>
               </div>
             </div>
-            {item.errorReasons.length > 0 && (
+            {showErrorReasons && item.errorReasons.length > 0 && (
               <div className="space-y-1.5">
                 {item.errorReasons.map((reason, index) => (
                   <ErrorReasonRow
@@ -326,9 +381,10 @@ function GlobalGroupHealthCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className={cn("h-2 w-2 shrink-0 rounded-full", preset.dot)} />
-              <h3 className="truncate text-sm font-bold leading-none text-foreground sm:text-base">
-                {item.group}
-              </h3>
+              <GroupPricingLink
+                group={item.group}
+                className="text-sm font-bold leading-none sm:text-base"
+              />
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               最近 <ClientTime value={item.lastSeenAt} />
@@ -345,7 +401,7 @@ function GlobalGroupHealthCard({
           <Metric label="平均耗时" value={`${secondsFormatter.format(item.avgUseTime)}s`} />
         </div>
 
-        {item.errorReasons.length > 0 && (
+        {showErrorReasons && item.errorReasons.length > 0 && (
           <div className="mt-3 border-t border-border/40 pt-3">
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               主要错误
@@ -422,6 +478,31 @@ function ErrorReasonRow({
         </button>
       </div>
     </div>
+  );
+}
+
+function GroupPricingLink({
+  group,
+  className,
+}: {
+  group: string;
+  className?: string;
+}) {
+  const url = `${PRICING_URL}?currency=CNY&group=${encodeURIComponent(group)}`;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 truncate text-foreground transition-colors hover:text-primary",
+        className
+      )}
+      title={`查看 ${group} 价格`}
+    >
+      <span className="truncate">{group}</span>
+      <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+    </a>
   );
 }
 

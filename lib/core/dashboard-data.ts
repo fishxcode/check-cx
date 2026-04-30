@@ -169,7 +169,10 @@ async function loadDashboardDataInternal(options?: {
     const configIds = allConfigs.map((config) => config.id);
     const [availabilityStats, globalGroupHealth] = await Promise.all([
       getAvailabilityStats(configIds),
-      loadGlobalGroupHealth({forceRefresh: refreshMode === "always"}),
+      loadGlobalGroupHealth({
+        forceRefresh: refreshMode === "always",
+        windows: ["24h"],
+      }),
     ]);
 
     const data: DashboardData = {

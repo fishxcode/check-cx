@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Check, Pencil, X, SlidersHorizontal, KeyRound, Eye, EyeOff, Globe } from "lucide-react";
 import { SiteConfigForm } from "@/components/admin/site-config-form";
+import { Switch } from "@/components/ui/switch";
 
 interface SiteSetting {
   key: string;
@@ -42,16 +43,16 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  async function save() {
+  async function save(nextValue: string = draft) {
     setSaving(true);
     setErr("");
     const res = await fetch(`/api/admin/settings/${setting.key}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: draft }),
+      body: JSON.stringify({ value: nextValue }),
     });
     setSaving(false);
-    if (res.ok) { setEditing(false); setDraft(isSecret ? "" : draft); onSaved(); }
+    if (res.ok) { setEditing(false); setDraft(isSecret ? "" : nextValue); onSaved(); }
     else { const d = await res.json(); setErr(d.error ?? "保存失败"); }
   }
 
@@ -78,7 +79,7 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
                 <option value="false" />
               </datalist>
             )}
-            <button onClick={save} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
+            <button onClick={() => void save()} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
               <Check className="h-3.5 w-3.5" />
             </button>
             <button onClick={() => { setEditing(false); setDraft(isSecret ? "" : (setting.value ?? "")); setErr(""); }} className="rounded p-1 text-muted-foreground hover:bg-muted">
@@ -88,13 +89,31 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{setting.value || "—"}</code>
-            <button
-              onClick={() => { setDraft(isSecret ? "" : (setting.value ?? "")); setEditing(true); }}
-              className="sm:opacity-0 sm:group-hover:opacity-100 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
+            {isBoolean ? (
+              <>
+                <Switch
+                  checked={setting.value === "true"}
+                  disabled={saving}
+                  onCheckedChange={(checked) => {
+                    setDraft(String(checked));
+                    void save(String(checked));
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {setting.value === "true" ? "已开启" : "已关闭"}
+                </span>
+              </>
+            ) : (
+              <>
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{setting.value || "—"}</code>
+                <button
+                  onClick={() => { setDraft(isSecret ? "" : (setting.value ?? "")); setEditing(true); }}
+                  className="sm:opacity-0 sm:group-hover:opacity-100 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </td>

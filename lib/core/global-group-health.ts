@@ -57,40 +57,55 @@ let cache: {
 
 export async function loadGlobalGroupHealth(options?: {
   forceRefresh?: boolean;
+  windows?: GlobalGroupHealthWindow[];
 }): Promise<GlobalGroupHealthSummary> {
   const now = Date.now();
-  if (!options?.forceRefresh && cache && now < cache.expiresAt) {
+  const requestedWindows = options?.windows ?? WINDOWS;
+  const shouldUseFullCache = requestedWindows.length === WINDOWS.length;
+  if (!options?.forceRefresh && shouldUseFullCache && cache && now < cache.expiresAt) {
     return cache.summary;
   }
 
   const settings = await getAllSiteSettings();
   const enabled = readSetting(settings, "global_group_health.enabled", "true") === "true";
+  const showErrorReasons =
+    readSetting(settings, "global_group_health.show_error_reasons", "false") === "true";
   if (!enabled) {
-    return unavailableSummary("全局分组监控未启用", false);
+    return unavailableSummary("全局分组监控未启用", false, showErrorReasons);
   }
 
   const baseUrl = readSetting(settings, "global_group_health.newapi_base_url", process.env.NEWAPI_BASE_URL);
   const accessToken = readSetting(settings, "global_group_health.newapi_access_token", process.env.NEWAPI_ACCESS_TOKEN);
   if (!baseUrl || !accessToken) {
-    return unavailableSummary("未配置 fishxcode 分组健康数据源");
+    return unavailableSummary("未配置 fishxcode 分组健康数据源", true, showErrorReasons);
   }
 
   const userId = readSetting(settings, "global_group_health.newapi_user_id", process.env.NEWAPI_USER_ID);
-  const summary = await fetchGlobalGroupHealth(baseUrl, accessToken, userId);
-  cache = {
-    summary,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  };
+  const summary = await fetchGlobalGroupHealth(
+    baseUrl,
+    accessToken,
+    userId,
+    requestedWindows,
+    showErrorReasons
+  );
+  if (shouldUseFullCache) {
+    cache = {
+      summary,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    };
+  }
   return summary;
 }
 
 async function fetchGlobalGroupHealth(
   baseUrl: string,
   accessToken: string,
-  userId: string
+  userId: string,
+  requestedWindows: GlobalGroupHealthWindow[],
+  showErrorReasons: boolean
 ): Promise<GlobalGroupHealthSummary> {
   const settled = await Promise.all(
-    WINDOWS.map(async (window) => {
+    requestedWindows.map(async (window) => {
       try {
         const items = await fetchGlobalGroupHealthWindow(baseUrl, accessToken, userId, window);
         return {window, items, ok: true as const};
@@ -107,17 +122,19 @@ async function fetchGlobalGroupHealth(
     settled.map((entry) => [entry.window, entry.items])
   ) as Record<GlobalGroupHealthWindow, GlobalGroupHealthItem[]>;
 
-  if (failedWindows.length === WINDOWS.length) {
-    return unavailableSummary("fishxcode 分组健康读取失败");
+  if (failedWindows.length === requestedWindows.length) {
+    return unavailableSummary("fishxcode 分组健康读取失败", true, showErrorReasons);
   }
 
+  const emptyItemsByWindow = createEmptyItemsByWindow();
   return {
     available: true,
     enabled: true,
+    showErrorReasons,
     updatedAt: new Date().toISOString(),
     defaultWindow: DEFAULT_WINDOW,
     windows: WINDOWS,
-    itemsByWindow,
+    itemsByWindow: {...emptyItemsByWindow, ...itemsByWindow},
     message:
       failedWindows.length > 0
         ? `部分历史窗口读取失败：${failedWindows.map((window) => WINDOW_LABEL[window]).join("、")}`
@@ -283,20 +300,26 @@ function readSetting(
 
 function unavailableSummary(
   message: string,
-  enabled: boolean = true
+  enabled: boolean = true,
+  showErrorReasons: boolean = false
 ): GlobalGroupHealthSummary {
   return {
     available: false,
     enabled,
+    showErrorReasons,
     updatedAt: null,
     defaultWindow: DEFAULT_WINDOW,
     windows: WINDOWS,
-    itemsByWindow: {
-      "1h": [],
-      "6h": [],
-      "12h": [],
-      "24h": [],
-    },
+    itemsByWindow: createEmptyItemsByWindow(),
     message,
+  };
+}
+
+function createEmptyItemsByWindow(): Record<GlobalGroupHealthWindow, GlobalGroupHealthItem[]> {
+  return {
+    "1h": [],
+    "6h": [],
+    "12h": [],
+    "24h": [],
   };
 }
