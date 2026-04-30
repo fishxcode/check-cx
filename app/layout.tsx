@@ -3,6 +3,7 @@ import {Geist, Geist_Mono} from "next/font/google";
 import "./globals.css";
 import "@/lib/core/poller";
 import NextTopLoader from "nextjs-toploader";
+import {Toaster} from "sonner";
 import {ThemeProvider} from "@/components/theme-provider";
 import {NotificationBanner} from "@/components/notification-banner";
 import {getSiteSeoConfig, toAbsoluteUrl} from "@/lib/core/site-seo";
@@ -111,6 +112,7 @@ export default function RootLayout({
         >
           <NotificationBanner />
           {children}
+          <Toaster richColors position="top-right" />
         </ThemeProvider>
       </body>
     </html>

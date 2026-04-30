@@ -36,6 +36,7 @@ interface SchedulerToken {
 
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
   const isSecret = setting.value_type === "secret";
+  const isBoolean = setting.value_type === "boolean";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(isSecret ? "" : (setting.value ?? ""));
   const [saving, setSaving] = useState(false);
@@ -65,11 +66,18 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               type={isSecret ? "password" : setting.value_type === "number" ? "number" : "text"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              list={isBoolean ? `${setting.key}-options` : undefined}
               placeholder={isSecret ? "输入新密钥（留空保留原值）" : undefined}
               className="h-7 w-40 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && save()}
             />
+            {isBoolean && (
+              <datalist id={`${setting.key}-options`}>
+                <option value="true" />
+                <option value="false" />
+              </datalist>
+            )}
             <button onClick={save} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
               <Check className="h-3.5 w-3.5" />
             </button>

@@ -2,7 +2,7 @@
  * Dashboard 数据相关类型定义
  */
 
-import type {CheckResult} from "./check";
+import type {CheckResult, HealthStatus} from "./check";
 
 export type AvailabilityPeriod = "7d" | "15d" | "30d";
 
@@ -14,6 +14,39 @@ export interface AvailabilityStat {
 }
 
 export type AvailabilityStatsMap = Record<string, AvailabilityStat[]>;
+
+export type GlobalGroupHealthWindow = "1h" | "6h" | "12h" | "24h";
+
+export interface GlobalGroupHealthErrorReason {
+  content: string;
+  count: number;
+  statusCode: string;
+}
+
+export interface GlobalGroupHealthItem {
+  group: string;
+  status: Extract<HealthStatus, "operational" | "degraded" | "failed">;
+  totalCount: number;
+  successCount: number;
+  errorCount: number;
+  quota: number;
+  tokens: number;
+  avgUseTime: number;
+  successRate: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  errorReasons: GlobalGroupHealthErrorReason[];
+}
+
+export interface GlobalGroupHealthSummary {
+  available: boolean;
+  enabled: boolean;
+  updatedAt: string | null;
+  defaultWindow: GlobalGroupHealthWindow;
+  windows: GlobalGroupHealthWindow[];
+  itemsByWindow: Record<GlobalGroupHealthWindow, GlobalGroupHealthItem[]>;
+  message?: string;
+}
 
 export interface GroupInfoSummary {
   groupName: string;
@@ -54,6 +87,7 @@ export interface GroupedProviderTimelines {
 export interface DashboardData {
   providerTimelines: ProviderTimeline[];
   groupInfos: GroupInfoSummary[];
+  globalGroupHealth?: GlobalGroupHealthSummary;
   lastUpdated: string | null;
   total: number;
   pollIntervalLabel: string;

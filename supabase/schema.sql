@@ -136,7 +136,11 @@ INSERT INTO public.site_settings (key, value, description, editable, value_type)
     ('check_poll_interval_seconds', '60',   '检测轮询间隔（秒），重启后生效', true,  'number'),
     ('degraded_threshold_ms',       '6000', '延迟超过此值判定为降级（毫秒）', true,  'number'),
     ('max_concurrency',             '5',    '并发检测任务上限（1–20）',        true,  'number'),
-    ('history_retention_count',     '60',   '每个配置最多保留历史条数',        true,  'number')
+    ('history_retention_count',     '60',   '每个配置最多保留历史条数',        true,  'number'),
+    ('global_group_health.enabled', 'true', '是否在前台展示 New API 全局分组监控', true, 'boolean'),
+    ('global_group_health.newapi_base_url', '', 'New API 服务地址，例如 https://api.example.com', true, 'string'),
+    ('global_group_health.newapi_access_token', '', 'New API 系统访问令牌（私密密钥，留空则不修改）', true, 'secret'),
+    ('global_group_health.newapi_user_id', '', 'New API 用户 ID；留空表示全局统计，不按用户过滤', true, 'number')
 ON CONFLICT (key) DO NOTHING;
 
 -- 外部调度 Token 表

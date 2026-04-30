@@ -1,0 +1,455 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { AlertCircle, ChevronDown, Clock, Copy, ExternalLink, Search, Zap } from "lucide-react";
+import Link from "next/link";
+import { toast } from "sonner";
+
+import { ClientTime } from "@/components/client-time";
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { STATUS_META } from "@/lib/core/status";
+import type { GlobalGroupHealthItem, GlobalGroupHealthSummary, GlobalGroupHealthWindow } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type GlobalGroupHealthSortMode = "custom" | "group" | "name";
+type GlobalGroupHealthViewMode = "card" | "list";
+type CopyFeedbackState = {
+  key: string;
+  status: "success" | "error";
+} | null;
+
+interface GlobalGroupHealthPanelProps {
+  summary?: GlobalGroupHealthSummary;
+  searchQuery?: string;
+  sortMode?: GlobalGroupHealthSortMode;
+  viewMode?: GlobalGroupHealthViewMode;
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  className?: string;
+  showDetailLink?: boolean;
+}
+
+const percentFormatter = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 1,
+});
+
+const secondsFormatter = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 1,
+});
+
+const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
+  "1h": "1 小时",
+  "6h": "6 小时",
+  "12h": "12 小时",
+  "24h": "24 小时",
+};
+
+const TROUBLESHOOTING_URL =
+  "https://doc.fishxcode.com/faq#%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E5%92%8C%E7%90%86%E8%A7%A3%E9%94%99%E8%AF%AF%E6%97%A5%E5%BF%97";
+
+export function GlobalGroupHealthPanel({
+  summary,
+  searchQuery = "",
+  sortMode = "custom",
+  viewMode = "card",
+  isOpen,
+  onOpenChange,
+  className,
+  showDetailLink = true,
+}: GlobalGroupHealthPanelProps) {
+  const [internalOpen, setInternalOpen] = useState(true);
+  const [selectedWindow, setSelectedWindow] = useState<GlobalGroupHealthWindow>(
+    summary?.defaultWindow ?? "24h"
+  );
+
+  const open = isOpen ?? internalOpen;
+  const handleOpenChange = onOpenChange ?? setInternalOpen;
+  const available = summary?.available === true;
+  const items = useMemo(() => {
+    const baseItems = summary?.itemsByWindow[selectedWindow] ?? [];
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = query
+      ? baseItems.filter((item) => itemMatchesQuery(item, query))
+      : baseItems;
+
+    if (sortMode === "custom") {
+      return filtered;
+    }
+
+    return [...filtered].sort((a, b) => a.group.localeCompare(b.group));
+  }, [searchQuery, selectedWindow, sortMode, summary?.itemsByWindow]);
+
+  if (!summary || summary.enabled === false) {
+    return null;
+  }
+
+  const statusSummary = items.reduce(
+    (acc, item) => {
+      acc[item.status] += 1;
+      return acc;
+    },
+    { operational: 0, degraded: 0, failed: 0 }
+  );
+  const hasFault = statusSummary.failed > 0 || items.some((item) => item.errorReasons.length > 0);
+  const emptyMessage = available
+    ? searchQuery.trim()
+      ? "当前搜索条件下没有匹配的全局分组"
+      : `最近 ${WINDOW_LABEL[selectedWindow]} 暂无全局分组日志`
+    : summary?.message ?? "全局分组监控暂不可用";
+
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={handleOpenChange}
+      className={cn(
+        "mb-4 rounded-3xl border border-border/50 bg-background/40 p-4 backdrop-blur-sm sm:mb-6 sm:p-6",
+        className
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 sm:gap-4">
+        <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-3 text-left transition hover:opacity-80 focus-visible:outline-none sm:gap-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10 sm:h-10 sm:w-10">
+            <ChevronDown className="h-4 w-4 text-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 sm:h-5 sm:w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h2 className="truncate text-lg font-bold tracking-tight text-foreground sm:text-2xl">
+                全局分组监控
+              </h2>
+              <span className="rounded-full bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                fishxcode
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              {available ? (
+                <>
+                  {statusSummary.operational > 0 && (
+                    <span className="flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      {statusSummary.operational} 正常
+                    </span>
+                  )}
+                  {statusSummary.degraded > 0 && (
+                    <span className="flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      {statusSummary.degraded} 降级
+                    </span>
+                  )}
+                  {statusSummary.failed > 0 && (
+                    <span className="flex items-center gap-1.5 whitespace-nowrap">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                      {statusSummary.failed} 异常
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  暂不可用
+                </span>
+              )}
+              <span className="whitespace-nowrap">最近 {WINDOW_LABEL[selectedWindow]}</span>
+              {summary.updatedAt && (
+                <span className="whitespace-nowrap">
+                  更新于 <ClientTime value={summary.updatedAt} />
+                </span>
+              )}
+            </div>
+          </div>
+        </CollapsibleTrigger>
+        <div className="hidden shrink-0 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:block">
+          {items.length} groups
+        </div>
+        {hasFault && (
+          <Link
+            href={TROUBLESHOOTING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground sm:flex"
+          >
+            故障定位
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        )}
+        {showDetailLink && (
+          <Link
+            href="/group/global"
+            className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground p-0 text-sm font-medium text-background transition-all hover:bg-foreground/90 sm:h-10 sm:w-auto sm:gap-2 sm:px-5 sm:hover:px-6"
+          >
+            <span className="hidden whitespace-nowrap sm:inline">详情</span>
+            <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+          </Link>
+        )}
+      </div>
+
+      <CollapsibleContent className="animate-in fade-in-0 slide-in-from-top-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:w-fit">
+          <span className="pl-1">历史窗口</span>
+          <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
+            {summary.windows.map((window) => (
+              <button
+                key={window}
+                type="button"
+                onClick={() => setSelectedWindow(window)}
+                className={cn(
+                  "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                  selectedWindow === window
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {WINDOW_LABEL[window]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {items.length > 0 ? (
+          <div
+            className={cn(
+              "mt-2 grid gap-4",
+              viewMode === "list" ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+            )}
+          >
+            {items.map((item) => (
+              <GlobalGroupHealthCard key={item.group} item={item} viewMode={viewMode} />
+            ))}
+          </div>
+        ) : (
+          <GlobalGroupHealthEmptyState available={available} message={emptyMessage} />
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function GlobalGroupHealthEmptyState({
+  available,
+  message,
+}: {
+  available: boolean;
+  message: string;
+}) {
+  const Icon = available ? Search : AlertCircle;
+  return (
+    <div className="mt-3 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/20 px-4 py-8 text-center">
+      <div className="mb-3 rounded-full bg-muted/50 p-3">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <h3 className="text-sm font-semibold">
+        {available ? "没有全局分组数据" : "全局分组监控暂不可用"}
+      </h3>
+      <p className="mt-1 max-w-xl text-xs text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function GlobalGroupHealthCard({
+  item,
+  viewMode,
+}: {
+  item: GlobalGroupHealthItem;
+  viewMode: GlobalGroupHealthViewMode;
+}) {
+  const preset = STATUS_META[item.status];
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackState>(null);
+  const handleCopyErrorReason = async (
+    reasonKey: string,
+    statusCode: string,
+    content: string
+  ) => {
+    try {
+      await copyErrorReason(statusCode, content);
+      setCopyFeedback({key: reasonKey, status: "success"});
+      toast.success("错误信息已复制");
+      window.setTimeout(() => setCopyFeedback(null), 1200);
+    } catch {
+      setCopyFeedback({key: reasonKey, status: "error"});
+      toast.error("复制失败，请手动复制");
+      window.setTimeout(() => setCopyFeedback(null), 1600);
+    }
+  };
+
+  if (viewMode === "list") {
+    return (
+      <article className="rounded-2xl border border-border/50 bg-background/40 px-3 py-2.5 backdrop-blur-sm transition-colors hover:border-border/80">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", preset.dot)} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{item.group}</div>
+                <div className="truncate text-[10px] font-medium text-muted-foreground">
+                  fishxcode · 最近 <ClientTime value={item.lastSeenAt} />
+                </div>
+              </div>
+            </div>
+            {item.errorReasons.length > 0 && (
+              <div className="space-y-1.5">
+                {item.errorReasons.map((reason, index) => (
+                  <ErrorReasonRow
+                    key={`${item.group}-${reason.statusCode}-${index}`}
+                    reasonKey={`${item.group}-${reason.statusCode}-${index}`}
+                    statusCode={reason.statusCode}
+                    count={reason.count}
+                    content={reason.content}
+                    copyFeedback={copyFeedback}
+                    onCopy={handleCopyErrorReason}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Badge variant={preset.badge} className="gap-1.5">
+              <span className={cn("h-2 w-2 rounded-full", preset.dot)} />
+              {preset.label}
+            </Badge>
+            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+              <span className="font-mono">{percentFormatter.format(item.successRate)}%</span>
+            </Badge>
+            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+              <Zap className="h-3 w-3 text-muted-foreground" />
+              <span className="font-mono">{secondsFormatter.format(item.avgUseTime)}s</span>
+            </Badge>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-background/40 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-md hover:shadow-primary/5">
+      <div className="flex-1 p-3 sm:p-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", preset.dot)} />
+              <h3 className="truncate text-sm font-bold leading-none text-foreground sm:text-base">
+                {item.group}
+              </h3>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              最近 <ClientTime value={item.lastSeenAt} />
+            </p>
+          </div>
+          <Badge variant={preset.badge} className="gap-1.5">
+            <span className={cn("h-2 w-2 rounded-full", preset.dot)} />
+            {preset.label}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="成功率" value={`${percentFormatter.format(item.successRate)}%`} />
+          <Metric label="平均耗时" value={`${secondsFormatter.format(item.avgUseTime)}s`} />
+        </div>
+
+        {item.errorReasons.length > 0 && (
+          <div className="mt-3 border-t border-border/40 pt-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              主要错误
+            </div>
+            <div className="space-y-1.5">
+              {item.errorReasons.map((reason, index) => (
+                <ErrorReasonRow
+                  key={`${item.group}-${reason.statusCode}-${index}`}
+                  reasonKey={`${item.group}-${reason.statusCode}-${index}`}
+                  statusCode={reason.statusCode}
+                  count={reason.count}
+                  content={reason.content}
+                  copyFeedback={copyFeedback}
+                  onCopy={handleCopyErrorReason}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-border/40 bg-muted/10 px-4 py-3">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span>Window</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Clock className="h-3 w-3" />
+            <ClientTime value={item.firstSeenAt} /> - <ClientTime value={item.lastSeenAt} />
+          </span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ErrorReasonRow({
+  reasonKey,
+  statusCode,
+  count,
+  content,
+  copyFeedback,
+  onCopy,
+}: {
+  reasonKey: string;
+  statusCode: string;
+  count: number;
+  content: string;
+  copyFeedback: CopyFeedbackState;
+  onCopy: (reasonKey: string, statusCode: string, content: string) => Promise<void>;
+}) {
+  const feedbackStatus = copyFeedback?.key === reasonKey ? copyFeedback.status : null;
+  return (
+    <div className="min-w-0 rounded-lg bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50">
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-foreground">{statusCode || "unknown"}</span>
+        <span>{count} 条</span>
+        <span className="truncate">{content}</span>
+        <button
+          type="button"
+          onClick={() => void onCopy(reasonKey, statusCode, content)}
+          className={cn(
+            "ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-all hover:bg-muted hover:text-foreground active:scale-90",
+            feedbackStatus === "success" && "bg-green-500/10 text-green-600 dark:text-green-400",
+            feedbackStatus === "error" && "bg-red-500/10 text-red-600 dark:text-red-400"
+          )}
+          title={
+            feedbackStatus === "success"
+              ? "已复制"
+              : feedbackStatus === "error"
+                ? "复制失败"
+                : "复制错误信息"
+          }
+        >
+          <Copy className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-muted/25 px-2 py-1.5">
+      <div className="text-[10px] font-medium text-muted-foreground">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function itemMatchesQuery(item: GlobalGroupHealthItem, query: string): boolean {
+  return (
+    item.group.toLowerCase().includes(query) ||
+    item.status.toLowerCase().includes(query) ||
+    item.errorReasons.some(
+      (reason) =>
+        reason.content.toLowerCase().includes(query) ||
+        reason.statusCode.toLowerCase().includes(query)
+    )
+  );
+}
+
+async function copyErrorReason(statusCode: string, content: string): Promise<void> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    throw new Error("clipboard_unavailable");
+  }
+  const prefix = statusCode ? `status_code=${statusCode}, ` : "";
+  await navigator.clipboard.writeText(`${prefix}${content}`);
+}

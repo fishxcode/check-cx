@@ -12,6 +12,7 @@ import {getAvailabilityStats} from "../database/availability";
 import {getPollingIntervalLabel, getPollingIntervalMs} from "./polling-config";
 import {ensureOfficialStatusPoller} from "./official-status-poller";
 import {buildProviderTimelines, loadSnapshotForScope} from "./health-snapshot-service";
+import {loadGlobalGroupHealth} from "./global-group-health";
 import type {AvailabilityPeriod, DashboardData, GroupInfoSummary, RefreshMode,} from "../types";
 
 interface DashboardCacheEntry {
@@ -166,11 +167,15 @@ async function loadDashboardDataInternal(options?: {
       tags: info.tags ?? "",
     }));
     const configIds = allConfigs.map((config) => config.id);
-    const availabilityStats = await getAvailabilityStats(configIds);
+    const [availabilityStats, globalGroupHealth] = await Promise.all([
+      getAvailabilityStats(configIds),
+      loadGlobalGroupHealth({forceRefresh: refreshMode === "always"}),
+    ]);
 
     const data: DashboardData = {
       providerTimelines,
       groupInfos: groupInfoSummaries,
+      globalGroupHealth,
       lastUpdated,
       total: providerTimelines.length,
       pollIntervalLabel,

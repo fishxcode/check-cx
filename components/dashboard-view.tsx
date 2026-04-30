@@ -36,6 +36,7 @@ import {
 import {CSS} from "@dnd-kit/utilities";
 
 import {GroupTags} from "@/components/group-tags";
+import {GlobalGroupHealthPanel} from "@/components/global-group-health-panel";
 import {ProviderCard} from "@/components/provider-card";
 import {ProviderListItem} from "@/components/provider-list-item";
 import {ThemeToggle} from "@/components/theme-toggle";
@@ -97,6 +98,9 @@ const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "group", label: "按分组" },
   { value: "name", label: "按名称" },
 ];
+
+const CONTROL_BUTTON_CLASS =
+  "transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95";
 
 const DEFAULT_SITE_TITLE = "Check CX - AI 模型健康监控";
 const DEFAULT_SITE_DESCRIPTION = "实时追踪各大 AI 模型对话接口的可用性、延迟与官方服务状态。";
@@ -442,7 +446,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   );
   const [sortMode, setSortMode] = useState<SortMode>("custom");
   const [viewMode, setViewMode] = useState<ViewMode>("card");
+  const isPeriodLoading = isRefreshing && selectedPeriod !== data.trendPeriod;
   const [openGroupNames, setOpenGroupNames] = useState<Set<string>>(() => new Set());
+  const [isGlobalGroupHealthOpen, setIsGlobalGroupHealthOpen] = useState(false);
   const prevSearchActiveRef = useRef(false);
 
   const initialGroupedTimelines = useMemo(
@@ -874,9 +880,25 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
 
   const setAllGroupsOpen = useCallback(
     (open: boolean) => {
+      setIsGlobalGroupHealthOpen(open);
       setOpenGroupNames(() => (open ? new Set(filteredGroupNames) : new Set()));
     },
     [filteredGroupNames]
+  );
+
+  const allVisibleGroupsOpen = useMemo(
+    () =>
+      filteredGroupNames.length > 0 &&
+      isGlobalGroupHealthOpen &&
+      filteredGroupNames.every((groupName) => openGroupNames.has(groupName)),
+    [filteredGroupNames, isGlobalGroupHealthOpen, openGroupNames]
+  );
+
+  const allVisibleGroupsCollapsed = useMemo(
+    () =>
+      !isGlobalGroupHealthOpen &&
+      filteredGroupNames.every((groupName) => !openGroupNames.has(groupName)),
+    [filteredGroupNames, isGlobalGroupHealthOpen, openGroupNames]
   );
 
   const groupedPanels = filteredGroupNames.length === 0 ? (
@@ -893,7 +915,10 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
             setSearchQuery("");
             setSelectedTags([]);
           }}
-          className="mt-4 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+          className={cn(
+            "mt-4 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90",
+            CONTROL_BUTTON_CLASS
+          )}
         >
           清除筛选
         </button>
@@ -965,7 +990,10 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                   href={siteConfig.githubUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-xs"
+                  className={cn(
+                    "flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground sm:text-xs",
+                    CONTROL_BUTTON_CLASS
+                  )}
                 >
                   <Github className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   <span>GitHub</span>
@@ -977,7 +1005,10 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
             <div className="h-3 w-[1px] bg-border/60 sm:h-4" />
             <Link
               href="/admin"
-              className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-xs"
+              className={cn(
+                "flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground sm:text-xs",
+                CONTROL_BUTTON_CLASS
+              )}
             >
               <Settings className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               <span>Admin</span>
@@ -1002,7 +1033,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  placeholder="搜索分组或 Provider（名称、类型、状态）..."
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
-                 className="h-9 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                 className="h-9 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-all duration-200 placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:shadow-sm"
                />
                <Search
                  aria-hidden="true"
@@ -1012,7 +1043,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  <button
                    type="button"
                    onClick={() => setSearchQuery("")}
-                   className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                   className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground active:scale-90"
                  >
                    <X className="h-4 w-4" />
                  </button>
@@ -1031,7 +1062,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                      type="button"
                      onClick={() => toggleTag(tag)}
                      className={cn(
-                       "rounded-full px-3 py-1 text-xs font-semibold transition-all",
+                       "rounded-full px-3 py-1 text-xs font-semibold shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95",
                        isSelected
                          ? cn(getTagColorClass(tag), "ring-2 ring-foreground/20")
                          : "bg-muted/50 text-muted-foreground hover:bg-muted"
@@ -1045,7 +1076,10 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  <button
                    type="button"
                    onClick={() => setSelectedTags([])}
-                   className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                   className={cn(
+                     "flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground",
+                     CONTROL_BUTTON_CLASS
+                   )}
                  >
                    <X className="h-3 w-3" />
                    清除
@@ -1065,7 +1099,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                      type="button"
                      onClick={() => setSortMode(option.value)}
                      className={cn(
-                       "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                       "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                       CONTROL_BUTTON_CLASS,
                        sortMode === option.value
                          ? "bg-foreground text-background"
                          : "text-muted-foreground hover:text-foreground"
@@ -1086,7 +1121,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  type="button"
                  onClick={() => setViewMode("card")}
                  className={cn(
-                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                   CONTROL_BUTTON_CLASS,
                    viewMode === "card"
                      ? "bg-foreground text-background"
                      : "text-muted-foreground hover:text-foreground"
@@ -1099,7 +1135,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  type="button"
                  onClick={() => setViewMode("list")}
                  className={cn(
-                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                   "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                   CONTROL_BUTTON_CLASS,
                    viewMode === "list"
                      ? "bg-foreground text-background"
                      : "text-muted-foreground hover:text-foreground"
@@ -1119,14 +1156,26 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  <button
                    type="button"
                    onClick={() => setAllGroupsOpen(true)}
-                   className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                   className={cn(
+                     "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                     CONTROL_BUTTON_CLASS,
+                     allVisibleGroupsOpen
+                       ? "bg-foreground text-background"
+                       : "text-muted-foreground hover:text-foreground"
+                   )}
                  >
                    展开
                  </button>
                  <button
                    type="button"
                    onClick={() => setAllGroupsOpen(false)}
-                   className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                   className={cn(
+                     "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                     CONTROL_BUTTON_CLASS,
+                     allVisibleGroupsCollapsed
+                       ? "bg-foreground text-background"
+                       : "text-muted-foreground hover:text-foreground"
+                   )}
                  >
                    折叠
                  </button>
@@ -1143,9 +1192,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                    type="button"
                    onClick={() => setSelectedPeriod(option.value)}
                    className={cn(
-                     "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                     "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider",
+                     CONTROL_BUTTON_CLASS,
                      selectedPeriod === option.value
-                       ? "bg-foreground text-background"
+                       ? cn(
+                           "bg-foreground text-background",
+                           isPeriodLoading && option.value === selectedPeriod && "animate-pulse"
+                         )
                        : "text-muted-foreground hover:text-foreground"
                    )}
                  >
@@ -1177,18 +1230,32 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                   onClick={() => refresh(selectedPeriod, true)}
                   disabled={isRefreshing}
                   className={cn(
-                    "rounded-full border border-border/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:border-border/80 hover:text-foreground",
+                    "inline-flex min-w-14 items-center justify-center rounded-full border border-border/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:border-border/80 hover:text-foreground",
+                    CONTROL_BUTTON_CLASS,
                     isRefreshing && "cursor-not-allowed opacity-60"
                   )}
                 >
-                  刷新
+                  {isRefreshing ? "刷新中" : "刷新"}
                 </button>
              </div>
            )}
         </div>
       </header>
 
-      <main className="relative z-10 min-h-[50vh]">
+      <main
+        className={cn(
+          "relative z-10 min-h-[50vh] transition-opacity duration-200",
+          isRefreshing && "opacity-80"
+        )}
+      >
+        <GlobalGroupHealthPanel
+          summary={data.globalGroupHealth}
+          searchQuery={searchQuery}
+          sortMode={sortMode}
+          viewMode={viewMode}
+          isOpen={isGlobalGroupHealthOpen}
+          onOpenChange={setIsGlobalGroupHealthOpen}
+        />
         {total === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
             <div className="mb-4 rounded-full bg-muted/50 p-4">
