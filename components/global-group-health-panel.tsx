@@ -96,12 +96,6 @@ export function GlobalGroupHealthPanel({
   const available = activeSummary?.available === true;
 
   useEffect(() => {
-    if (initialWindow && initialWindow !== selectedWindow) {
-      setSelectedWindow(initialWindow);
-    }
-  }, [initialWindow, selectedWindow]);
-
-  useEffect(() => {
     if (!activeSummary || !initialWindow || initialWindow === activeSummary.defaultWindow) {
       return;
     }
@@ -111,9 +105,11 @@ export function GlobalGroupHealthPanel({
       loadingWindow === initialWindow ||
       requestedWindowRef.current.has(initialWindow)
     ) {
+      setSelectedWindow(initialWindow);
       return;
     }
     requestedWindowRef.current.add(initialWindow);
+    setSelectedWindow(initialWindow);
     setLoadingWindow(initialWindow);
     fetch(`/api/global-group-health?window=${initialWindow}`, { cache: "no-store" })
       .then((response) => {
