@@ -15,7 +15,7 @@ export interface AvailabilityStat {
 
 export type AvailabilityStatsMap = Record<string, AvailabilityStat[]>;
 
-export type GlobalGroupHealthWindow = "1h" | "6h" | "12h" | "24h";
+export type GlobalGroupHealthWindow = "1h" | "6h" | "12h" | "24h" | "7d" | "15d" | "30d";
 
 export interface GlobalGroupHealthErrorReason {
   content: string;

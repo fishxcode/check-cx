@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ChevronDown, Clock, Copy, ExternalLink, Search, Zap } from "lucide-react";
+import { AlertCircle, ChevronDown, Clock, ExternalLink, MessageSquare, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -14,10 +14,6 @@ import { cn } from "@/lib/utils";
 
 type GlobalGroupHealthSortMode = "custom" | "group" | "name";
 type GlobalGroupHealthViewMode = "card" | "list";
-type CopyFeedbackState = {
-  key: string;
-  status: "success" | "error";
-} | null;
 
 interface GlobalGroupHealthPanelProps {
   summary?: GlobalGroupHealthSummary;
@@ -46,6 +42,9 @@ const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
   "6h": "6 小时",
   "12h": "12 小时",
   "24h": "24 小时",
+  "7d": "7 天",
+  "15d": "15 天",
+  "30d": "30 天",
 };
 
 const TROUBLESHOOTING_URL =
@@ -99,7 +98,7 @@ export function GlobalGroupHealthPanel({
     }
     requestedWindowRef.current.add(initialWindow);
     setLoadingWindow(initialWindow);
-    fetch(`/api/global-group-health?window=${initialWindow}`, {cache: "no-store"})
+    fetch(`/api/global-group-health?window=${initialWindow}`, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) {
           throw new Error(`global_group_health_${response.status}`);
@@ -385,23 +384,6 @@ function GlobalGroupHealthCard({
   showErrorReasons: boolean;
 }) {
   const preset = STATUS_META[item.status];
-  const [copyFeedback, setCopyFeedback] = useState<CopyFeedbackState>(null);
-  const handleCopyErrorReason = async (
-    reasonKey: string,
-    statusCode: string,
-    content: string
-  ) => {
-    try {
-      await copyErrorReason(statusCode, content);
-      setCopyFeedback({key: reasonKey, status: "success"});
-      toast.success("错误信息已复制");
-      window.setTimeout(() => setCopyFeedback(null), 1200);
-    } catch {
-      setCopyFeedback({key: reasonKey, status: "error"});
-      toast.error("复制失败，请手动复制");
-      window.setTimeout(() => setCopyFeedback(null), 1600);
-    }
-  };
 
   if (viewMode === "list") {
     return (
@@ -426,8 +408,6 @@ function GlobalGroupHealthCard({
                     statusCode={reason.statusCode}
                     count={reason.count}
                     content={reason.content}
-                    copyFeedback={copyFeedback}
-                    onCopy={handleCopyErrorReason}
                   />
                 ))}
               </div>
@@ -492,8 +472,6 @@ function GlobalGroupHealthCard({
                   statusCode={reason.statusCode}
                   count={reason.count}
                   content={reason.content}
-                  copyFeedback={copyFeedback}
-                  onCopy={handleCopyErrorReason}
                 />
               ))}
             </div>
@@ -519,41 +497,30 @@ function ErrorReasonRow({
   statusCode,
   count,
   content,
-  copyFeedback,
-  onCopy,
 }: {
   reasonKey: string;
   statusCode: string;
   count: number;
   content: string;
-  copyFeedback: CopyFeedbackState;
-  onCopy: (reasonKey: string, statusCode: string, content: string) => Promise<void>;
 }) {
-  const feedbackStatus = copyFeedback?.key === reasonKey ? copyFeedback.status : null;
+  const askAiUrl = `https://t3.chat/new?q=${encodeURIComponent(
+    `请分析以下 https://www.fishxcode.com/ 中转站错误日志：\n\nstatus_code=${statusCode}, ${content}`
+  )}`;
   return (
     <div className="min-w-0 rounded-lg bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50">
       <div className="flex items-center gap-2">
         <span className="font-semibold text-foreground">{statusCode || "unknown"}</span>
         <span>{count} 条</span>
         <span className="truncate">{content}</span>
-        <button
-          type="button"
-          onClick={() => void onCopy(reasonKey, statusCode, content)}
-          className={cn(
-            "ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-all hover:bg-muted hover:text-foreground active:scale-90",
-            feedbackStatus === "success" && "bg-green-500/10 text-green-600 dark:text-green-400",
-            feedbackStatus === "error" && "bg-red-500/10 text-red-600 dark:text-red-400"
-          )}
-          title={
-            feedbackStatus === "success"
-              ? "已复制"
-              : feedbackStatus === "error"
-                ? "复制失败"
-                : "复制错误信息"
-          }
+        <a
+          href={askAiUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-90"
+          title="用 AI 分析这个错误"
         >
-          <Copy className="h-3 w-3" />
-        </button>
+          <MessageSquare className="h-3 w-3" />
+        </a>
       </div>
     </div>
   );
@@ -603,12 +570,4 @@ function itemMatchesQuery(item: GlobalGroupHealthItem, query: string): boolean {
         reason.statusCode.toLowerCase().includes(query)
     )
   );
-}
-
-async function copyErrorReason(statusCode: string, content: string): Promise<void> {
-  if (typeof navigator === "undefined" || !navigator.clipboard) {
-    throw new Error("clipboard_unavailable");
-  }
-  const prefix = statusCode ? `status_code=${statusCode}, ` : "";
-  await navigator.clipboard.writeText(`${prefix}${content}`);
 }

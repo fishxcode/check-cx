@@ -38,7 +38,7 @@ export async function generateMetadata() {
   };
 }
 
-const VALID_WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h"];
+const VALID_WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"];
 
 export default async function GlobalGroupPage({
   searchParams,
@@ -82,7 +82,7 @@ export default async function GlobalGroupPage({
             全局分组监控
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-            按 1 小时、6 小时、12 小时、24 小时查看 fishxcode 全局分组健康状态。
+            按 1 小时、6 小时、12 小时、24 小时、7 天、15 天、30 天查看 fishxcode 全局分组健康状态。
           </p>
         </header>
 

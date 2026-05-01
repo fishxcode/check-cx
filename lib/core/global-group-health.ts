@@ -16,18 +16,24 @@ import {getAllSiteSettings} from "./site-settings";
 const CACHE_TTL_MS = 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10 * 1000;
 const DEFAULT_WINDOW: GlobalGroupHealthWindow = "24h";
-const WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h"];
+const WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"];
 const WINDOW_SECONDS: Record<GlobalGroupHealthWindow, number> = {
   "1h": 60 * 60,
   "6h": 6 * 60 * 60,
   "12h": 12 * 60 * 60,
   "24h": 24 * 60 * 60,
+  "7d": 7 * 24 * 60 * 60,
+  "15d": 15 * 24 * 60 * 60,
+  "30d": 30 * 24 * 60 * 60,
 };
 const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
   "1h": "1 小时",
   "6h": "6 小时",
   "12h": "12 小时",
   "24h": "24 小时",
+  "7d": "7 天",
+  "15d": "15 天",
+  "30d": "30 天",
 };
 
 interface GroupHealthApiResponse {
@@ -321,5 +327,8 @@ function createEmptyItemsByWindow(): Record<GlobalGroupHealthWindow, GlobalGroup
     "6h": [],
     "12h": [],
     "24h": [],
+    "7d": [],
+    "15d": [],
+    "30d": [],
   };
 }

@@ -6,7 +6,7 @@ import type {GlobalGroupHealthWindow} from "@/lib/types";
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
-const VALID_WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h"];
+const VALID_WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"];
 
 export async function GET(request: Request) {
   const {searchParams} = new URL(request.url);
