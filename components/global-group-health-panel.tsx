@@ -16,6 +16,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ChevronDown, Clock, ExternalLink, MessageSquare, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -82,6 +83,8 @@ export function GlobalGroupHealthPanel({
   initialWindow,
   onWindowChange,
 }: GlobalGroupHealthPanelProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [internalOpen, setInternalOpen] = useState(true);
   const [localSummary, setLocalSummary] = useState(summary);
   const [loadingWindow, setLoadingWindow] = useState<GlobalGroupHealthWindow | null>(null);
@@ -94,6 +97,15 @@ export function GlobalGroupHealthPanel({
   const handleOpenChange = onOpenChange ?? setInternalOpen;
   const activeSummary = localSummary ?? summary;
   const available = activeSummary?.available === true;
+
+  // Sync selectedWindow with URL changes
+  useEffect(() => {
+    const windowParam = searchParams.get("window");
+    const isValidWindow = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"].includes(windowParam ?? "");
+    if (windowParam && isValidWindow) {
+      setSelectedWindow(windowParam as GlobalGroupHealthWindow);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!activeSummary || !initialWindow || initialWindow === activeSummary.defaultWindow) {
@@ -176,6 +188,16 @@ export function GlobalGroupHealthPanel({
   const handleWindowChange = async (window: GlobalGroupHealthWindow) => {
     setSelectedWindow(window);
     onWindowChange?.(window);
+    // Push window to URL for /group/global page
+    const params = new URLSearchParams(searchParams.toString());
+    if (window === "24h") {
+      params.delete("window");
+    } else {
+      params.set("window", window);
+    }
+    router.replace(`/group/global${params.toString() ? `?${params.toString()}` : ""}`, {
+      scroll: false,
+    });
     const hasWindowData = (activeSummary.itemsByWindow[window] ?? []).length > 0;
     if (hasWindowData || loadingWindow === window) {
       return;
