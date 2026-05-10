@@ -66,8 +66,6 @@ const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
 const TROUBLESHOOTING_URL =
   "https://doc.fishxcode.com/faq#%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E5%92%8C%E7%90%86%E8%A7%A3%E9%94%99%E8%AF%AF%E6%97%A5%E5%BF%97";
 const GROUP_HEALTH_DOC_URL = "https://status.fishxcode.com/group/global";
-const GROUP_HEALTH_GITHUB_URL = "https://github.com/QuantumNous/new-api";
-const GROUP_HEALTH_NEWAPI_DOCS_URL = "https://docs.newapi.pro";
 const PRICING_URL = "https://fishxcode.com/pricing";
 
 export function GlobalGroupHealthPanel({
@@ -97,18 +95,34 @@ export function GlobalGroupHealthPanel({
   const handleOpenChange = onOpenChange ?? setInternalOpen;
   const activeSummary = localSummary ?? summary;
   const available = activeSummary?.available === true;
+  const visibleWindows = useMemo(() => activeSummary?.windows ?? [], [activeSummary?.windows]);
+  const effectiveWindow = visibleWindows.includes(selectedWindow)
+    ? selectedWindow
+    : activeSummary?.defaultWindow ?? visibleWindows[0] ?? "24h";
 
   // Sync selectedWindow with URL changes
   useEffect(() => {
     const windowParam = searchParams.get("window");
-    const isValidWindow = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"].includes(windowParam ?? "");
+    const isValidWindow = activeSummary?.windows.includes(windowParam as GlobalGroupHealthWindow);
     if (windowParam && isValidWindow) {
       setSelectedWindow(windowParam as GlobalGroupHealthWindow);
     }
-  }, [searchParams]);
+  }, [activeSummary?.windows, searchParams]);
 
   useEffect(() => {
-    if (!activeSummary || !initialWindow || initialWindow === activeSummary.defaultWindow) {
+    if (effectiveWindow !== selectedWindow) {
+      setSelectedWindow(effectiveWindow);
+      onWindowChange?.(effectiveWindow);
+    }
+  }, [effectiveWindow, onWindowChange, selectedWindow]);
+
+  useEffect(() => {
+    if (
+      !activeSummary ||
+      !initialWindow ||
+      initialWindow === activeSummary.defaultWindow ||
+      !visibleWindows.includes(initialWindow)
+    ) {
       return;
     }
     const hasWindowData = (activeSummary.itemsByWindow[initialWindow] ?? []).length > 0;
@@ -151,10 +165,10 @@ export function GlobalGroupHealthPanel({
         toast.error(`${WINDOW_LABEL[initialWindow]} 全局分组读取失败`);
       })
       .finally(() => setLoadingWindow(null));
-  }, [activeSummary, initialWindow, loadingWindow]);
+  }, [activeSummary, initialWindow, loadingWindow, visibleWindows]);
 
   const items = useMemo(() => {
-    const baseItems = activeSummary?.itemsByWindow[selectedWindow] ?? [];
+    const baseItems = activeSummary?.itemsByWindow[effectiveWindow] ?? [];
     const query = searchQuery.trim().toLowerCase();
     const filtered = query
       ? baseItems.filter((item) => itemMatchesQuery(item, query))
@@ -165,7 +179,7 @@ export function GlobalGroupHealthPanel({
     }
 
     return [...filtered].sort((a, b) => a.group.localeCompare(b.group));
-  }, [activeSummary?.itemsByWindow, searchQuery, selectedWindow, sortMode]);
+  }, [activeSummary?.itemsByWindow, effectiveWindow, searchQuery, sortMode]);
 
   if (!activeSummary || activeSummary.enabled === false) {
     return null;
@@ -183,14 +197,14 @@ export function GlobalGroupHealthPanel({
   const emptyMessage = available
     ? searchQuery.trim()
       ? "当前搜索条件下没有匹配的全局分组"
-      : `最近 ${WINDOW_LABEL[selectedWindow]} 暂无全局分组日志`
+      : `最近 ${WINDOW_LABEL[effectiveWindow]} 暂无全局分组日志`
     : activeSummary?.message ?? "全局分组监控暂不可用";
   const handleWindowChange = async (window: GlobalGroupHealthWindow) => {
     setSelectedWindow(window);
     onWindowChange?.(window);
     // Push window to URL for /group/global page
     const params = new URLSearchParams(searchParams.toString());
-    if (window === "24h") {
+    if (window === activeSummary.defaultWindow) {
       params.delete("window");
     } else {
       params.set("window", window);
@@ -285,7 +299,7 @@ export function GlobalGroupHealthPanel({
                   暂不可用
                 </span>
               )}
-              <span className="whitespace-nowrap">最近 {WINDOW_LABEL[selectedWindow]}</span>
+              <span className="whitespace-nowrap">最近 {WINDOW_LABEL[effectiveWindow]}</span>
               {activeSummary.updatedAt && (
                 <span className="whitespace-nowrap">
                   更新于 <ClientTime value={activeSummary.updatedAt} />
@@ -341,14 +355,14 @@ export function GlobalGroupHealthPanel({
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:w-fit">
           <span className="pl-1">历史窗口</span>
           <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
-            {activeSummary.windows.map((window) => (
+            {visibleWindows.map((window) => (
               <button
                 key={window}
                 type="button"
                 onClick={() => void handleWindowChange(window)}
                 className={cn(
                   "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95",
-                  selectedWindow === window
+                  effectiveWindow === window
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground"
                 )}
@@ -377,8 +391,8 @@ export function GlobalGroupHealthPanel({
         ) : (
           <GlobalGroupHealthEmptyState
             available={available}
-            loading={loadingWindow === selectedWindow}
-            message={loadingWindow === selectedWindow ? "正在读取该历史窗口..." : emptyMessage}
+            loading={loadingWindow === effectiveWindow}
+            message={loadingWindow === effectiveWindow ? "正在读取该历史窗口..." : emptyMessage}
           />
         )}
       </CollapsibleContent>
@@ -460,6 +474,9 @@ function GlobalGroupHealthCard({
               <Zap className="h-3 w-3 text-muted-foreground" />
               <span className="font-mono">{secondsFormatter.format(item.avgUseTime)}s</span>
             </Badge>
+            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+              缓存 <span className="font-mono">{formatPercent(item.cacheRate)}</span>
+            </Badge>
           </div>
         </div>
       </article>
@@ -489,8 +506,13 @@ function GlobalGroupHealthCard({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="成功率" value={`${percentFormatter.format(item.successRate)}%`} />
+          <Metric label="成功率" value={formatPercent(item.successRate)} />
           <Metric label="平均耗时" value={`${secondsFormatter.format(item.avgUseTime)}s`} />
+          <Metric label="缓存率" value={formatPercent(item.cacheRate)} />
+          <Metric
+            label="缓存效率"
+            value={formatPercent(item.cacheRequestRate)}
+          />
         </div>
 
         {showErrorReasons && item.errorReasons.length > 0 && (
@@ -602,6 +624,10 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="mt-0.5 truncate text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
+}
+
+function formatPercent(value: number): string {
+  return `${percentFormatter.format(value)}%`;
 }
 
 function itemMatchesQuery(item: GlobalGroupHealthItem, query: string): boolean {

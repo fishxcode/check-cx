@@ -843,6 +843,17 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       (groupedTimelines.length === 1 && groupedTimelines[0].groupName !== UNGROUPED_KEY)
     );
   }, [groupedTimelines]);
+  const hasGlobalGroupHealthContent = useMemo(() => {
+    const summary = data.globalGroupHealth;
+    if (!summary || summary.enabled === false || summary.available === false) {
+      return false;
+    }
+    return (
+      isGlobalGroupHealthOpen ||
+      (summary.itemsByWindow[globalWindow] ?? []).length > 0 ||
+      Object.values(summary.itemsByWindow).some((items) => items.length > 0)
+    );
+  }, [data.globalGroupHealth, globalWindow, isGlobalGroupHealthOpen]);
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>();
@@ -1390,7 +1401,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           onWindowChange={setGlobalWindow}
           analysisHref={analysisHref}
         />
-        {total === 0 ? (
+        {total === 0 && !hasGlobalGroupHealthContent ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
             <div className="mb-4 rounded-full bg-muted/50 p-4">
               <Activity className="h-8 w-8 text-muted-foreground" />

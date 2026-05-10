@@ -31,8 +31,17 @@ export interface GlobalGroupHealthItem {
   errorCount: number;
   quota: number;
   tokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cacheTokens: number;
+  cacheRequestCount: number;
   avgUseTime: number;
   successRate: number;
+  cacheRate: number;
+  cacheRequestRate: number;
+  avgCacheTokens: number;
+  avgPromptTokens: number;
+  avgCompletionTokens: number;
   firstSeenAt: string;
   lastSeenAt: string;
   errorReasons: GlobalGroupHealthErrorReason[];

@@ -38,6 +38,13 @@ const REQUIRED_SITE_SETTINGS = [
     editable: true,
     value_type: "boolean",
   },
+  {
+    key: "global_group_health.windows",
+    value: "1h,6h,12h,24h,7d,15d,30d",
+    description: "全局分组监控历史窗口，按逗号分隔，可选：1h,6h,12h,24h,7d,15d,30d",
+    editable: true,
+    value_type: "string",
+  },
 ];
 
 async function requireAuth() {

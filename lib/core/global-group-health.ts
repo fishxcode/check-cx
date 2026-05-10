@@ -14,9 +14,18 @@ import {logError} from "../utils";
 import {getAllSiteSettings} from "./site-settings";
 
 const CACHE_TTL_MS = 60 * 1000;
-const REQUEST_TIMEOUT_MS = 10 * 1000;
 const DEFAULT_WINDOW: GlobalGroupHealthWindow = "24h";
 const WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"];
+const DEFAULT_WINDOWS_SETTING = WINDOWS.join(",");
+const WINDOW_TIMEOUT_MS: Record<GlobalGroupHealthWindow, number> = {
+  "1h": 10 * 1000,
+  "6h": 15 * 1000,
+  "12h": 20 * 1000,
+  "24h": 25 * 1000,
+  "7d": 45 * 1000,
+  "15d": 60 * 1000,
+  "30d": 90 * 1000,
+};
 const WINDOW_SECONDS: Record<GlobalGroupHealthWindow, number> = {
   "1h": 60 * 60,
   "6h": 6 * 60 * 60,
@@ -49,14 +58,24 @@ interface GroupHealthApiItem {
   error_count?: unknown;
   quota?: unknown;
   tokens?: unknown;
+  prompt_tokens?: unknown;
+  completion_tokens?: unknown;
+  cache_tokens?: unknown;
+  cache_request_count?: unknown;
   avg_use_time?: unknown;
   success_rate?: unknown;
+  cache_rate?: unknown;
+  cache_request_rate?: unknown;
+  avg_cache_tokens?: unknown;
+  avg_prompt_tokens?: unknown;
+  avg_completion_tokens?: unknown;
   first_seen_at?: unknown;
   last_seen_at?: unknown;
   error_reasons?: unknown;
 }
 
 let cache: {
+  cacheKey: string;
   expiresAt: number;
   summary: GlobalGroupHealthSummary;
 } | null = null;
@@ -66,37 +85,54 @@ export async function loadGlobalGroupHealth(options?: {
   windows?: GlobalGroupHealthWindow[];
 }): Promise<GlobalGroupHealthSummary> {
   const now = Date.now();
-  const requestedWindows = options?.windows ?? WINDOWS;
-  const shouldUseFullCache = requestedWindows.length === WINDOWS.length;
-  if (!options?.forceRefresh && shouldUseFullCache && cache && now < cache.expiresAt) {
-    return cache.summary;
-  }
-
   const settings = await getAllSiteSettings();
   const enabled = readSetting(settings, "global_group_health.enabled", "true") === "true";
   const showErrorReasons =
     readSetting(settings, "global_group_health.show_error_reasons", "false") === "true";
+  const enabledWindows = parseWindowsSetting(
+    readSetting(settings, "global_group_health.windows", DEFAULT_WINDOWS_SETTING)
+  );
+  const defaultWindow = pickDefaultWindow(enabledWindows);
+  const requestedWindows = resolveRequestedWindows(options?.windows, enabledWindows, defaultWindow);
+  const shouldUseFullCache =
+    requestedWindows.length === enabledWindows.length &&
+    requestedWindows.every((window) => enabledWindows.includes(window));
+
   if (!enabled) {
-    return unavailableSummary("全局分组监控未启用", false, showErrorReasons);
+    return unavailableSummary("全局分组监控未启用", false, showErrorReasons, enabledWindows, defaultWindow);
   }
 
   const baseUrl = readSetting(settings, "global_group_health.newapi_base_url", process.env.NEWAPI_BASE_URL);
   const accessToken = readSetting(settings, "global_group_health.newapi_access_token", process.env.NEWAPI_ACCESS_TOKEN);
   if (!baseUrl || !accessToken) {
-    return unavailableSummary("未配置 fishxcode 分组健康数据源", true, showErrorReasons);
+    return unavailableSummary("未配置 fishxcode 分组健康数据源", true, showErrorReasons, enabledWindows, defaultWindow);
   }
 
   const userId = readSetting(settings, "global_group_health.newapi_user_id", process.env.NEWAPI_USER_ID);
+  const cacheKey = createCacheKey(enabledWindows, baseUrl, accessToken, userId, showErrorReasons);
+  if (
+    !options?.forceRefresh &&
+    shouldUseFullCache &&
+    cache &&
+    cache.cacheKey === cacheKey &&
+    now < cache.expiresAt
+  ) {
+    return cache.summary;
+  }
+
   const summary = await fetchGlobalGroupHealth(
     baseUrl,
     accessToken,
     userId,
     requestedWindows,
-    showErrorReasons
+    showErrorReasons,
+    enabledWindows,
+    defaultWindow
   );
   if (shouldUseFullCache) {
     cache = {
       summary,
+      cacheKey,
       expiresAt: Date.now() + CACHE_TTL_MS,
     };
   }
@@ -108,7 +144,9 @@ async function fetchGlobalGroupHealth(
   accessToken: string,
   userId: string,
   requestedWindows: GlobalGroupHealthWindow[],
-  showErrorReasons: boolean
+  showErrorReasons: boolean,
+  enabledWindows: GlobalGroupHealthWindow[],
+  defaultWindow: GlobalGroupHealthWindow
 ): Promise<GlobalGroupHealthSummary> {
   const settled = await Promise.all(
     requestedWindows.map(async (window) => {
@@ -129,7 +167,7 @@ async function fetchGlobalGroupHealth(
   ) as Record<GlobalGroupHealthWindow, GlobalGroupHealthItem[]>;
 
   if (failedWindows.length === requestedWindows.length) {
-    return unavailableSummary("fishxcode 分组健康读取失败", true, showErrorReasons);
+    return unavailableSummary("fishxcode 分组健康读取失败", true, showErrorReasons, enabledWindows, defaultWindow);
   }
 
   const emptyItemsByWindow = createEmptyItemsByWindow();
@@ -138,8 +176,8 @@ async function fetchGlobalGroupHealth(
     enabled: true,
     showErrorReasons,
     updatedAt: new Date().toISOString(),
-    defaultWindow: DEFAULT_WINDOW,
-    windows: WINDOWS,
+    defaultWindow,
+    windows: enabledWindows,
     itemsByWindow: {...emptyItemsByWindow, ...itemsByWindow},
     message:
       failedWindows.length > 0
@@ -155,7 +193,7 @@ async function fetchGlobalGroupHealthWindow(
   window: GlobalGroupHealthWindow
 ): Promise<GlobalGroupHealthItem[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), WINDOW_TIMEOUT_MS[window]);
 
   try {
     const response = await fetch(buildGroupHealthUrl(baseUrl, userId, window), {
@@ -204,6 +242,7 @@ function buildGroupHealthUrl(
   url.searchParams.set("user_id", userId);
   url.searchParams.set("username", "");
   url.searchParams.set("channel", "");
+  url.searchParams.set("include_token_stats", "false");
   return url.toString();
 }
 
@@ -232,8 +271,17 @@ function normalizeGroupHealthItem(value: unknown): GlobalGroupHealthItem | null 
     errorCount: toNumber(item.error_count) ?? 0,
     quota: toNumber(item.quota) ?? 0,
     tokens: toNumber(item.tokens) ?? 0,
+    promptTokens: toNumber(item.prompt_tokens) ?? 0,
+    completionTokens: toNumber(item.completion_tokens) ?? 0,
+    cacheTokens: toNumber(item.cache_tokens) ?? 0,
+    cacheRequestCount: toNumber(item.cache_request_count) ?? 0,
     avgUseTime: toNumber(item.avg_use_time) ?? 0,
     successRate,
+    cacheRate: toNumber(item.cache_rate) ?? 0,
+    cacheRequestRate: toNumber(item.cache_request_rate) ?? 0,
+    avgCacheTokens: toNumber(item.avg_cache_tokens) ?? 0,
+    avgPromptTokens: toNumber(item.avg_prompt_tokens) ?? 0,
+    avgCompletionTokens: toNumber(item.avg_completion_tokens) ?? 0,
     firstSeenAt,
     lastSeenAt,
     errorReasons: normalizeErrorReasons(item.error_reasons),
@@ -304,18 +352,61 @@ function readSetting(
   return (settings[key] ?? fallback ?? "").trim();
 }
 
+function parseWindowsSetting(value: string): GlobalGroupHealthWindow[] {
+  const seen = new Set<GlobalGroupHealthWindow>();
+  for (const rawWindow of value.split(",")) {
+    const window = rawWindow.trim();
+    if (isGlobalGroupHealthWindow(window)) {
+      seen.add(window);
+    }
+  }
+  return seen.size > 0 ? [...seen] : WINDOWS;
+}
+
+function resolveRequestedWindows(
+  requestedWindows: GlobalGroupHealthWindow[] | undefined,
+  enabledWindows: GlobalGroupHealthWindow[],
+  defaultWindow: GlobalGroupHealthWindow
+): GlobalGroupHealthWindow[] {
+  if (!requestedWindows) {
+    return enabledWindows;
+  }
+  const allowed = requestedWindows.filter((window) => enabledWindows.includes(window));
+  return allowed.length > 0 ? allowed : [defaultWindow];
+}
+
+function pickDefaultWindow(windows: GlobalGroupHealthWindow[]): GlobalGroupHealthWindow {
+  return windows.includes(DEFAULT_WINDOW) ? DEFAULT_WINDOW : windows[0] ?? DEFAULT_WINDOW;
+}
+
+function isGlobalGroupHealthWindow(value: string): value is GlobalGroupHealthWindow {
+  return WINDOWS.includes(value as GlobalGroupHealthWindow);
+}
+
+function createCacheKey(
+  windows: GlobalGroupHealthWindow[],
+  baseUrl: string,
+  accessToken: string,
+  userId: string,
+  showErrorReasons: boolean
+): string {
+  return JSON.stringify({windows, baseUrl, accessToken, userId, showErrorReasons});
+}
+
 function unavailableSummary(
   message: string,
   enabled: boolean = true,
-  showErrorReasons: boolean = false
+  showErrorReasons: boolean = false,
+  windows: GlobalGroupHealthWindow[] = WINDOWS,
+  defaultWindow: GlobalGroupHealthWindow = DEFAULT_WINDOW
 ): GlobalGroupHealthSummary {
   return {
     available: false,
     enabled,
     showErrorReasons,
     updatedAt: null,
-    defaultWindow: DEFAULT_WINDOW,
-    windows: WINDOWS,
+    defaultWindow,
+    windows,
     itemsByWindow: createEmptyItemsByWindow(),
     message,
   };
