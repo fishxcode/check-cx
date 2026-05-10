@@ -65,7 +65,7 @@ const WINDOW_LABEL: Record<GlobalGroupHealthWindow, string> = {
 
 const TROUBLESHOOTING_URL =
   "https://doc.fishxcode.com/faq#%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E5%92%8C%E7%90%86%E8%A7%A3%E9%94%99%E8%AF%AF%E6%97%A5%E5%BF%97";
-const GROUP_HEALTH_DOC_URL = "https://status.fishxcode.com/group/global";
+const GROUP_HEALTH_DOC_URL = "https://doc.fishxcode.com/group-health";
 const PRICING_URL = "https://fishxcode.com/pricing";
 
 export function GlobalGroupHealthPanel({
