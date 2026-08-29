@@ -5,6 +5,7 @@ import { History, Filter, RefreshCw, Search, Trash2, Eye, Loader2 } from "lucide
 import { Pagination } from "@/components/admin/pagination";
 import { CrudDialog } from "@/components/admin/crud-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 interface HistoryRow {
   id: string | number;
@@ -20,6 +21,8 @@ interface HistoryRow {
 interface ConfigOption {
   id: string;
   name: string;
+  enabled: boolean;
+  is_maintenance: boolean;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -52,11 +55,14 @@ export default function HistoryPage() {
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchDeleting, setBatchDeleting]     = useState(false);
   const [detailRow, setDetailRow]     = useState<HistoryRow | null>(null);
+  const [togglingId, setTogglingId]   = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/configs")
       .then((r) => r.ok ? r.json() : [])
-      .then((data: { id: string; name: string }[]) => setConfigs(data.map((c) => ({ id: c.id, name: c.name }))))
+      .then((data: { id: string; name: string; enabled: boolean; is_maintenance: boolean }[]) =>
+        setConfigs(data.map((c) => ({ id: c.id, name: c.name, enabled: c.enabled, is_maintenance: c.is_maintenance })))
+      )
       .catch(() => {});
   }, []);
 
@@ -89,6 +95,19 @@ export default function HistoryPage() {
     setConfigId(newConfigId);
     setStatus(newStatus);
     setPage(1);
+  }
+
+  async function toggleConfigField(configId: string, field: "enabled" | "is_maintenance", value: boolean) {
+    setTogglingId(configId + field);
+    await fetch(`/api/admin/configs/${configId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    setConfigs((prev) =>
+      prev.map((c) => (c.id === configId ? { ...c, [field]: value } : c))
+    );
+    setTogglingId(null);
   }
 
   async function handleBatchDelete() {
@@ -284,26 +303,50 @@ export default function HistoryPage() {
           <DialogHeader>
             <DialogTitle>检测详情</DialogTitle>
           </DialogHeader>
-          {detailRow && (
-            <div className="space-y-3 text-sm">
-              <DetailRow label="配置" value={detailRow.check_configs?.name ?? detailRow.config_id} />
-              <DetailRow label="类型" value={detailRow.check_configs?.type ?? "—"} />
-              <DetailRow label="检测时间" value={new Date(detailRow.checked_at).toLocaleString("zh-CN")} />
-              <DetailRow label="状态">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[detailRow.status] ?? "bg-muted text-muted-foreground"}`}>
-                  {STATUS_LABELS[detailRow.status] ?? detailRow.status}
-                </span>
-              </DetailRow>
-              <DetailRow label="首 Token" value={detailRow.latency_ms != null ? `${detailRow.latency_ms} ms` : "—"} />
-              <DetailRow label="Ping" value={detailRow.ping_latency_ms != null ? `${Math.round(detailRow.ping_latency_ms)} ms` : "—"} />
-              {detailRow.message && (
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">消息</span>
-                  <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs">{detailRow.message}</pre>
-                </div>
-              )}
-            </div>
-          )}
+          {detailRow && (() => {
+            const cfg = configs.find((c) => c.id === detailRow.config_id);
+            return (
+              <div className="space-y-3 text-sm">
+                <DetailRow label="配置" value={detailRow.check_configs?.name ?? detailRow.config_id} />
+                <DetailRow label="类型" value={detailRow.check_configs?.type ?? "—"} />
+                <DetailRow label="检测时间" value={new Date(detailRow.checked_at).toLocaleString("zh-CN")} />
+                <DetailRow label="状态">
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[detailRow.status] ?? "bg-muted text-muted-foreground"}`}>
+                    {STATUS_LABELS[detailRow.status] ?? detailRow.status}
+                  </span>
+                </DetailRow>
+                <DetailRow label="首 Token" value={detailRow.latency_ms != null ? `${detailRow.latency_ms} ms` : "—"} />
+                <DetailRow label="Ping" value={detailRow.ping_latency_ms != null ? `${Math.round(detailRow.ping_latency_ms)} ms` : "—"} />
+                {detailRow.message && (
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-muted-foreground">消息</span>
+                    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs">{detailRow.message}</pre>
+                  </div>
+                )}
+                {cfg && (
+                  <div className="border-t border-border pt-3 space-y-2.5">
+                    <p className="text-xs font-medium text-muted-foreground">配置控制</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">启用监测</span>
+                      <Switch
+                        checked={cfg.enabled}
+                        disabled={togglingId === cfg.id + "enabled"}
+                        onCheckedChange={(v) => toggleConfigField(cfg.id, "enabled", v)}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">维护模式</span>
+                      <Switch
+                        checked={cfg.is_maintenance}
+                        disabled={togglingId === cfg.id + "is_maintenance"}
+                        onCheckedChange={(v) => toggleConfigField(cfg.id, "is_maintenance", v)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
