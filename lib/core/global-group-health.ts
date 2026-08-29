@@ -7,11 +7,31 @@ import "server-only";
 import type {
   GlobalGroupHealthErrorReason,
   GlobalGroupHealthItem,
+  GlobalGroupHealthMetricVisibility,
   GlobalGroupHealthSummary,
   GlobalGroupHealthWindow,
 } from "../types";
 import {logError} from "../utils";
 import {getAllSiteSettings} from "./site-settings";
+
+/** 指标显隐默认值：全部展示，保持既有行为 */
+const DEFAULT_METRIC_VISIBILITY: GlobalGroupHealthMetricVisibility = {
+  successRate: true,
+  avgUseTime: true,
+  cacheRate: true,
+  cacheRequestRate: true,
+};
+
+/** 从站点配置读取分组卡片各指标的显隐开关 */
+function readMetricVisibility(settings: Record<string, string>): GlobalGroupHealthMetricVisibility {
+  const read = (key: string) => readSetting(settings, key, "true") !== "false";
+  return {
+    successRate: read("global_group_health.metric.success_rate"),
+    avgUseTime: read("global_group_health.metric.avg_use_time"),
+    cacheRate: read("global_group_health.metric.cache_rate"),
+    cacheRequestRate: read("global_group_health.metric.cache_request_rate"),
+  };
+}
 
 const CACHE_TTL_MS = 60 * 1000;
 const DEFAULT_WINDOW: GlobalGroupHealthWindow = "24h";
@@ -89,6 +109,7 @@ export async function loadGlobalGroupHealth(options?: {
   const enabled = readSetting(settings, "global_group_health.enabled", "true") === "true";
   const showErrorReasons =
     readSetting(settings, "global_group_health.show_error_reasons", "false") === "true";
+  const metricVisibility = readMetricVisibility(settings);
   const enabledWindows = parseWindowsSetting(
     readSetting(settings, "global_group_health.windows", DEFAULT_WINDOWS_SETTING)
   );
@@ -99,13 +120,13 @@ export async function loadGlobalGroupHealth(options?: {
     requestedWindows.every((window) => enabledWindows.includes(window));
 
   if (!enabled) {
-    return unavailableSummary("全局分组监控未启用", false, showErrorReasons, enabledWindows, defaultWindow);
+    return unavailableSummary("全局分组监控未启用", false, showErrorReasons, enabledWindows, defaultWindow, metricVisibility);
   }
 
   const baseUrl = readSetting(settings, "global_group_health.newapi_base_url", process.env.NEWAPI_BASE_URL);
   const accessToken = readSetting(settings, "global_group_health.newapi_access_token", process.env.NEWAPI_ACCESS_TOKEN);
   if (!baseUrl || !accessToken) {
-    return unavailableSummary("未配置 fishxcode 分组健康数据源", true, showErrorReasons, enabledWindows, defaultWindow);
+    return unavailableSummary("未配置 fishxcode 分组健康数据源", true, showErrorReasons, enabledWindows, defaultWindow, metricVisibility);
   }
 
   const userId = readSetting(settings, "global_group_health.newapi_user_id", process.env.NEWAPI_USER_ID);
@@ -127,7 +148,8 @@ export async function loadGlobalGroupHealth(options?: {
     requestedWindows,
     showErrorReasons,
     enabledWindows,
-    defaultWindow
+    defaultWindow,
+    metricVisibility
   );
   if (shouldUseFullCache) {
     cache = {
@@ -146,7 +168,8 @@ async function fetchGlobalGroupHealth(
   requestedWindows: GlobalGroupHealthWindow[],
   showErrorReasons: boolean,
   enabledWindows: GlobalGroupHealthWindow[],
-  defaultWindow: GlobalGroupHealthWindow
+  defaultWindow: GlobalGroupHealthWindow,
+  metricVisibility: GlobalGroupHealthMetricVisibility
 ): Promise<GlobalGroupHealthSummary> {
   const settled = await Promise.all(
     requestedWindows.map(async (window) => {
@@ -167,7 +190,7 @@ async function fetchGlobalGroupHealth(
   ) as Record<GlobalGroupHealthWindow, GlobalGroupHealthItem[]>;
 
   if (failedWindows.length === requestedWindows.length) {
-    return unavailableSummary("fishxcode 分组健康读取失败", true, showErrorReasons, enabledWindows, defaultWindow);
+    return unavailableSummary("fishxcode 分组健康读取失败", true, showErrorReasons, enabledWindows, defaultWindow, metricVisibility);
   }
 
   const emptyItemsByWindow = createEmptyItemsByWindow();
@@ -175,6 +198,7 @@ async function fetchGlobalGroupHealth(
     available: true,
     enabled: true,
     showErrorReasons,
+    metricVisibility,
     updatedAt: new Date().toISOString(),
     defaultWindow,
     windows: enabledWindows,
@@ -398,12 +422,14 @@ function unavailableSummary(
   enabled: boolean = true,
   showErrorReasons: boolean = false,
   windows: GlobalGroupHealthWindow[] = WINDOWS,
-  defaultWindow: GlobalGroupHealthWindow = DEFAULT_WINDOW
+  defaultWindow: GlobalGroupHealthWindow = DEFAULT_WINDOW,
+  metricVisibility: GlobalGroupHealthMetricVisibility = DEFAULT_METRIC_VISIBILITY
 ): GlobalGroupHealthSummary {
   return {
     available: false,
     enabled,
     showErrorReasons,
+    metricVisibility,
     updatedAt: null,
     defaultWindow,
     windows,

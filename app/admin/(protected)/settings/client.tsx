@@ -121,6 +121,74 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
   );
 }
 
+const WINDOW_OPTIONS = [
+  { value: "1h", label: "1 小时" },
+  { value: "6h", label: "6 小时" },
+  { value: "12h", label: "12 小时" },
+  { value: "24h", label: "24 小时" },
+  { value: "7d", label: "7 天" },
+  { value: "15d", label: "15 天" },
+  { value: "30d", label: "30 天" },
+] as const;
+
+/** 历史窗口专用勾选行：把逗号分隔文本升级为多选 chip，避免填错 + 便于按需裁剪防大查询卡死 */
+function WindowsRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
+  const selected = (setting.value ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function toggle(value: string) {
+    // 保持 WINDOW_OPTIONS 的固定顺序，避免顺序错乱
+    const next = selected.includes(value)
+      ? selected.filter((v) => v !== value)
+      : [...selected, value];
+    if (next.length === 0) { setErr("至少保留一个窗口"); return; }
+    const ordered = WINDOW_OPTIONS.filter((o) => next.includes(o.value)).map((o) => o.value);
+    setSaving(true);
+    setErr("");
+    const res = await fetch(`/api/admin/settings/${setting.key}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: ordered.join(",") }),
+    });
+    setSaving(false);
+    if (res.ok) onSaved();
+    else { const d = await res.json(); setErr(d.error ?? "保存失败"); }
+  }
+
+  return (
+    <tr className="group hover:bg-muted/30 transition-colors">
+      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{setting.key}</td>
+      <td className="px-4 py-3 text-sm">
+        {setting.description}
+        <span className="mt-0.5 block text-xs text-muted-foreground/70">勾选前台可切换的历史窗口，窗口越少查询越轻</span>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {WINDOW_OPTIONS.map((o) => {
+            const on = selected.includes(o.value);
+            return (
+              <button
+                key={o.value}
+                type="button"
+                disabled={saving}
+                onClick={() => void toggle(o.value)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${on ? "bg-primary text-primary-foreground" : "border border-input text-muted-foreground hover:bg-muted"} disabled:opacity-50`}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+          {err && <span className="text-xs text-destructive">{err}</span>}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 const SITE_CONFIG_KEYS = [
   "site.title",
   "site.description",
@@ -370,7 +438,9 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
               <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-muted-foreground">加载中…</td></tr>
             )}
             {settings.map((s) => (
-              s.editable
+              s.key === "global_group_health.windows" && s.editable
+                ? <WindowsRow key={s.key} setting={s} onSaved={loadSettings} />
+                : s.editable
                 ? <EditableRow key={s.key} setting={s} onSaved={loadSettings} />
                 : (
                   <tr key={s.key} className="opacity-60">

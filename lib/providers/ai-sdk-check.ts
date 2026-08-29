@@ -564,8 +564,9 @@ export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResul
       );
     }
 
-    // 判定健康状态
-    const status: HealthStatus = latencyMs <= getDegradedThresholdMs() ? "operational" : "degraded";
+    // 判定健康状态（优先使用配置级延迟阈值，回退到全局默认）
+    const threshold = config.latencyThresholdMs ?? getDegradedThresholdMs();
+    const status: HealthStatus = latencyMs <= threshold ? "operational" : "degraded";
     const message = status === "degraded" ? `响应成功但耗时 ${latencyMs}ms` : `验证通过 (${latencyMs}ms)`;
 
     return buildCheckResult(params, status, latencyMs, message);

@@ -25,8 +25,16 @@ import { ClientTime } from "@/components/client-time";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { STATUS_META } from "@/lib/core/status";
-import type { GlobalGroupHealthItem, GlobalGroupHealthSummary, GlobalGroupHealthWindow } from "@/lib/types";
+import type { GlobalGroupHealthItem, GlobalGroupHealthMetricVisibility, GlobalGroupHealthSummary, GlobalGroupHealthWindow } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** 指标显隐默认值：全部展示，兼容旧数据/加载中状态 */
+const DEFAULT_METRIC_VISIBILITY: GlobalGroupHealthMetricVisibility = {
+  successRate: true,
+  avgUseTime: true,
+  cacheRate: true,
+  cacheRequestRate: true,
+};
 
 type GlobalGroupHealthSortMode = "custom" | "group" | "name";
 type GlobalGroupHealthViewMode = "card" | "list";
@@ -154,6 +162,7 @@ export function GlobalGroupHealthPanel({
             updatedAt: nextSummary.updatedAt ?? base.updatedAt,
             message: nextSummary.message,
             showErrorReasons: nextSummary.showErrorReasons,
+            metricVisibility: nextSummary.metricVisibility ?? base.metricVisibility,
             itemsByWindow: {
               ...base.itemsByWindow,
               [initialWindow]: nextSummary.itemsByWindow[initialWindow] ?? [],
@@ -193,6 +202,7 @@ export function GlobalGroupHealthPanel({
     { operational: 0, degraded: 0, failed: 0 }
   );
   const showErrorReasons = activeSummary.showErrorReasons === true;
+  const metricVisibility = activeSummary.metricVisibility ?? DEFAULT_METRIC_VISIBILITY;
   const hasFault = statusSummary.failed > 0 || items.some((item) => item.errorReasons.length > 0);
   const emptyMessage = available
     ? searchQuery.trim()
@@ -235,6 +245,7 @@ export function GlobalGroupHealthPanel({
           updatedAt: nextSummary.updatedAt ?? base.updatedAt,
           message: nextSummary.message,
           showErrorReasons: nextSummary.showErrorReasons,
+          metricVisibility: nextSummary.metricVisibility ?? base.metricVisibility,
           itemsByWindow: {
             ...base.itemsByWindow,
             [window]: nextSummary.itemsByWindow[window] ?? [],
@@ -385,6 +396,7 @@ export function GlobalGroupHealthPanel({
                 item={item}
                 viewMode={viewMode}
                 showErrorReasons={showErrorReasons}
+                metricVisibility={metricVisibility}
               />
             ))}
           </div>
@@ -427,10 +439,12 @@ function GlobalGroupHealthCard({
   item,
   viewMode,
   showErrorReasons,
+  metricVisibility,
 }: {
   item: GlobalGroupHealthItem;
   viewMode: GlobalGroupHealthViewMode;
   showErrorReasons: boolean;
+  metricVisibility: GlobalGroupHealthMetricVisibility;
 }) {
   const preset = STATUS_META[item.status];
 
@@ -467,16 +481,27 @@ function GlobalGroupHealthCard({
               <span className={cn("h-2 w-2 rounded-full", preset.dot)} />
               {preset.label}
             </Badge>
-            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
-              <span className="font-mono">{percentFormatter.format(item.successRate)}%</span>
-            </Badge>
-            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
-              <Zap className="h-3 w-3 text-muted-foreground" />
-              <span className="font-mono">{secondsFormatter.format(item.avgUseTime)}s</span>
-            </Badge>
-            <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
-              缓存 <span className="font-mono">{formatPercent(item.cacheRate)}</span>
-            </Badge>
+            {metricVisibility.successRate && (
+              <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+                <span className="font-mono">{percentFormatter.format(item.successRate)}%</span>
+              </Badge>
+            )}
+            {metricVisibility.avgUseTime && (
+              <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+                <Zap className="h-3 w-3 text-muted-foreground" />
+                <span className="font-mono">{secondsFormatter.format(item.avgUseTime)}s</span>
+              </Badge>
+            )}
+            {metricVisibility.cacheRate && (
+              <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+                缓存 <span className="font-mono">{formatPercent(item.cacheRate)}</span>
+              </Badge>
+            )}
+            {metricVisibility.cacheRequestRate && (
+              <Badge variant="outline" className="gap-1.5 border-border/40 bg-background/60">
+                缓存效率 <span className="font-mono">{formatPercent(item.cacheRequestRate)}</span>
+              </Badge>
+            )}
           </div>
         </div>
       </article>
@@ -505,15 +530,7 @@ function GlobalGroupHealthCard({
           </Badge>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Metric label="成功率" value={formatPercent(item.successRate)} />
-          <Metric label="平均耗时" value={`${secondsFormatter.format(item.avgUseTime)}s`} />
-          <Metric label="缓存率" value={formatPercent(item.cacheRate)} />
-          <Metric
-            label="缓存效率"
-            value={formatPercent(item.cacheRequestRate)}
-          />
-        </div>
+        <MetricGrid item={item} metricVisibility={metricVisibility} />
 
         {showErrorReasons && item.errorReasons.length > 0 && (
           <div className="mt-3 border-t border-border/40 pt-3">
@@ -614,6 +631,35 @@ function GroupPricingLink({
       <span className="truncate">{group}</span>
       <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
     </a>
+  );
+}
+
+/** 根据可见指标数量自适应列数：1→单列 2/4→双列 3→三列，实现一排/多排自适应 */
+function MetricGrid({
+  item,
+  metricVisibility,
+}: {
+  item: GlobalGroupHealthItem;
+  metricVisibility: GlobalGroupHealthMetricVisibility;
+}) {
+  const metrics: { key: keyof GlobalGroupHealthMetricVisibility; label: string; value: string }[] = [
+    { key: "successRate", label: "成功率", value: formatPercent(item.successRate) },
+    { key: "avgUseTime", label: "平均耗时", value: `${secondsFormatter.format(item.avgUseTime)}s` },
+    { key: "cacheRate", label: "缓存率", value: formatPercent(item.cacheRate) },
+    { key: "cacheRequestRate", label: "缓存效率", value: formatPercent(item.cacheRequestRate) },
+  ];
+  const visible = metrics.filter((m) => metricVisibility[m.key]);
+  if (visible.length === 0) return null;
+
+  const colClass =
+    visible.length === 1 ? "grid-cols-1" : visible.length === 3 ? "grid-cols-3" : "grid-cols-2";
+
+  return (
+    <div className={cn("grid gap-2", colClass)}>
+      {visible.map((m) => (
+        <Metric key={m.key} label={m.label} value={m.value} />
+      ))}
+    </div>
   );
 }
 

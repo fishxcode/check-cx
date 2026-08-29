@@ -28,12 +28,23 @@ export type {
   AvailabilityStatsMap,
   GlobalGroupHealthErrorReason,
   GlobalGroupHealthItem,
+  GlobalGroupHealthMetricKey,
+  GlobalGroupHealthMetricVisibility,
   GlobalGroupHealthSummary,
   GlobalGroupHealthWindow,
   RefreshMode,
   PingCacheEntry,
   HistorySnapshot,
 } from "./dashboard";
+
+// 配置模板类型
+export type {
+  TemplateCategory,
+  ConfigTemplate,
+  BatchApplyTemplateRequest,
+  BatchApplyTemplateResponse,
+  GetTemplatesResponse,
+} from "./template";
 
 // 常量
 export { UNGROUPED_KEY, UNGROUPED_DISPLAY_NAME } from "./constants";

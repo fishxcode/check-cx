@@ -3,8 +3,8 @@
  * 同时服务于常驻轮询器与无状态 Cron 任务
  */
 
-import {historySnapshotStore} from "../database/history";
 import {loadProviderConfigsFromDB} from "../database/config-loader";
+import {isConfigPaused, isConfigDue, updateNextCheckAt} from "../database/config-scheduler";
 import {getLastPingStartedAt, setLastPingStartedAt, setPollerRunning} from "./global-state";
 import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
 import {getPollingIntervalMs} from "./polling-config";
@@ -69,74 +69,40 @@ function buildSkippedResult(
   };
 }
 
-export async function getScheduledCheckDecision(
-  pollIntervalMs: number = getPollingIntervalMs()
-): Promise<PollScheduleDecision> {
+export async function getScheduledCheckDecision(): Promise<PollScheduleDecision> {
+  // 与 runPollExecution 使用同一套 next_check_at 驱动的每配置调度，避免决策与执行双轨不一致。
+  // 只要存在一个「启用 且 未暂停 且 已到期」的配置即判定 due。
   const allConfigs = await loadProviderConfigsFromDB({forceRefresh: true});
-  const activeConfigs = allConfigs.filter((cfg) => !cfg.is_maintenance);
+  const now = Date.now();
+  const activeConfigs = allConfigs.filter(
+    (cfg) => !cfg.is_maintenance && !isConfigPaused(cfg.pausedUntil, now)
+  );
 
   if (activeConfigs.length === 0) {
+    return {due: false, reason: "没有可执行的启用配置", lastCheckedAt: null};
+  }
+
+  const dueConfig = activeConfigs.find((cfg) => isConfigDue(cfg.nextCheckAt, now));
+  if (dueConfig) {
     return {
-      due: false,
-      reason: "没有可执行的启用配置",
+      due: true,
+      reason: dueConfig.nextCheckAt
+        ? `配置 ${dueConfig.name} 已到期（next_check_at=${dueConfig.nextCheckAt}）`
+        : `配置 ${dueConfig.name} 尚未调度过（next_check_at 为空）`,
       lastCheckedAt: null,
     };
   }
 
-  const history = await historySnapshotStore.fetch({
-    allowedIds: activeConfigs.map((config) => config.id),
-    limitPerConfig: 1,
-  });
-
-  let oldestCheckedAtMs = Number.POSITIVE_INFINITY;
-  let oldestCheckedAt: string | null = null;
-
-  for (const config of activeConfigs) {
-    const latest = history[config.id]?.[0];
-    if (!latest) {
-      return {
-        due: true,
-        reason: `配置 ${config.name} 缺少历史记录`,
-        lastCheckedAt: null,
-      };
-    }
-
-    const checkedAtMs = Date.parse(latest.checkedAt);
-    if (!Number.isFinite(checkedAtMs)) {
-      return {
-        due: true,
-        reason: `配置 ${config.name} 的最近检查时间无效`,
-        lastCheckedAt: latest.checkedAt,
-      };
-    }
-
-    if (checkedAtMs < oldestCheckedAtMs) {
-      oldestCheckedAtMs = checkedAtMs;
-      oldestCheckedAt = latest.checkedAt;
-    }
-  }
-
-  if (!Number.isFinite(oldestCheckedAtMs)) {
-    return {
-      due: true,
-      reason: "无法确定最近检查时间",
-      lastCheckedAt: oldestCheckedAt,
-    };
-  }
-
-  const elapsed = Date.now() - oldestCheckedAtMs;
-  if (elapsed >= pollIntervalMs) {
-    return {
-      due: true,
-      reason: `最近一次检查距今 ${elapsed}ms，超过阈值 ${pollIntervalMs}ms`,
-      lastCheckedAt: oldestCheckedAt,
-    };
-  }
+  // 全部未到期：返回最近的下次检查时间供调用方观测
+  const earliestNext = activeConfigs
+    .map((cfg) => cfg.nextCheckAt)
+    .filter((v): v is string => Boolean(v))
+    .sort()[0] ?? null;
 
   return {
     due: false,
-    reason: `最近一次检查距今 ${elapsed}ms，未达到阈值 ${pollIntervalMs}ms`,
-    lastCheckedAt: oldestCheckedAt,
+    reason: "所有配置均未到下次检查时间",
+    lastCheckedAt: earliestNext,
   };
 }
 
@@ -189,7 +155,14 @@ export async function runPollExecution(
     const allConfigs = await loadProviderConfigsFromDB({
       forceRefresh: options.forceRefreshConfigs,
     });
-    const configs = allConfigs.filter((cfg) => !cfg.is_maintenance);
+    const now = Date.now();
+    // 过滤：维护中、暂停中、未到期（自定义间隔）的配置均跳过
+    const configs = allConfigs.filter(
+      (cfg) =>
+        !cfg.is_maintenance &&
+        !isConfigPaused(cfg.pausedUntil, now) &&
+        isConfigDue(cfg.nextCheckAt, now)
+    );
 
     if (configs.length === 0) {
       console.log("[check-cx] 数据库中未找到可执行的启用配置");
@@ -197,6 +170,19 @@ export async function runPollExecution(
     }
 
     const results = await runChecksForConfigs(configs);
+
+    // 更新每个配置的下次检查时间（自定义间隔覆盖全局间隔）
+    const globalIntervalMs = getPollingIntervalMs();
+    await Promise.all(
+      configs.map((cfg) => {
+        const intervalMs =
+          cfg.checkIntervalOverride && cfg.checkIntervalOverride > 0
+            ? cfg.checkIntervalOverride * 1000
+            : globalIntervalMs;
+        const nextCheckAt = new Date(Date.now() + intervalMs).toISOString();
+        return updateNextCheckAt(cfg.id, nextCheckAt);
+      })
+    );
 
     console.log("[check-cx] 本轮检测明细：");
     results.forEach((result) => {

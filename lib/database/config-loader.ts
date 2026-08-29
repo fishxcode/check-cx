@@ -56,7 +56,7 @@ export async function loadProviderConfigsFromDB(options?: {
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("check_configs")
-      .select("id, name, type, model, endpoint, api_key, is_maintenance, request_header, metadata, group_name, stream_mode")
+      .select("id, name, type, model, endpoint, api_key, is_maintenance, request_header, metadata, group_name, stream_mode, paused_until, check_interval_override, latency_threshold_ms, next_check_at")
       .eq("enabled", true)
       .order("id");
 
@@ -73,7 +73,7 @@ export async function loadProviderConfigsFromDB(options?: {
     }
 
     const configs: ProviderConfig[] = data.map(
-      (row: Pick<CheckConfigRow, "id" | "name" | "type" | "model" | "endpoint" | "api_key" | "is_maintenance" | "request_header" | "metadata" | "group_name" | "stream_mode">) => ({
+      (row: Pick<CheckConfigRow, "id" | "name" | "type" | "model" | "endpoint" | "api_key" | "is_maintenance" | "request_header" | "metadata" | "group_name" | "stream_mode" | "paused_until" | "check_interval_override" | "latency_threshold_ms" | "next_check_at">) => ({
         id: row.id,
         name: row.name,
         type: row.type as ProviderType,
@@ -85,6 +85,10 @@ export async function loadProviderConfigsFromDB(options?: {
         metadata: row.metadata || null,
         groupName: row.group_name || null,
         streamMode: row.stream_mode || null,
+        pausedUntil: row.paused_until || null,
+        checkIntervalOverride: row.check_interval_override ?? null,
+        latencyThresholdMs: row.latency_threshold_ms ?? null,
+        nextCheckAt: row.next_check_at || null,
       })
     );
 

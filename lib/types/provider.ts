@@ -22,6 +22,10 @@ export interface ProviderConfig {
   metadata?: Record<string, unknown> | null;
   groupName?: string | null;
   streamMode?: "stream" | "generate" | null;
+  pausedUntil?: string | null;
+  checkIntervalOverride?: number | null;
+  latencyThresholdMs?: number | null;
+  nextCheckAt?: string | null;
 }
 
 /**

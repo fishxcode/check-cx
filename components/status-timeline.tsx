@@ -195,6 +195,19 @@ export function StatusTimeline({
                        {segment.message}
                      </div>
                    )}
+
+                   {segment.status !== "operational" && (
+                     <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-[10px] leading-relaxed text-muted-foreground">
+                       <p className="mb-1 font-semibold text-amber-600 dark:text-amber-400">
+                         关于本次采样
+                       </p>
+                       <p>
+                         单次探测采用最小请求 + 数学校验，结果受瞬时网络抖动、限流、冷启动或首 token 延迟影响，
+                         <span className="font-medium text-foreground">不代表服务当前不可用</span>。
+                         请以该时段的<span className="font-medium text-foreground">整体可用率</span>为准，偶发的黄/红点属正常波动。
+                       </p>
+                     </div>
+                   )}
                 </HoverCardContent>
               </HoverCard>
             );

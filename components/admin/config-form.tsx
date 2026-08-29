@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { TagEditor } from "@/components/admin/tag-editor";
 
 export interface ConfigFormData {
   name: string;
@@ -18,6 +19,9 @@ export interface ConfigFormData {
   stream_mode: "stream" | "generate";
   enabled: boolean;
   is_maintenance: boolean;
+  tags: string[];
+  check_interval_override: string;
+  latency_threshold_ms: string;
 }
 
 interface ConfigFormProps {
@@ -25,10 +29,11 @@ interface ConfigFormProps {
   onChange: (data: ConfigFormData) => void;
   isEdit?: boolean;
   groups?: string[];
+  tagSuggestions?: string[];
 }
 
-export function ConfigForm({ data, onChange, isEdit, groups }: ConfigFormProps) {
-  const set = (key: keyof ConfigFormData, value: string | boolean) =>
+export function ConfigForm({ data, onChange, isEdit, groups, tagSuggestions }: ConfigFormProps) {
+  const set = (key: keyof ConfigFormData, value: string | boolean | string[]) =>
     onChange({ ...data, [key]: value });
 
   return (
@@ -101,6 +106,23 @@ export function ConfigForm({ data, onChange, isEdit, groups }: ConfigFormProps) 
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-1.5">
+        <Label>标签</Label>
+        <TagEditor value={data.tags} onChange={(tags) => set("tags", tags)} suggestions={tagSuggestions} />
+      </div>
+      <details className="rounded-md border border-border/60 px-3 py-2">
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">高级调度（可选）</summary>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="cfg-interval">检查间隔（秒）</Label>
+            <Input id="cfg-interval" type="number" min={15} max={600} value={data.check_interval_override} onChange={(e) => set("check_interval_override", e.target.value)} placeholder="留空用全局" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cfg-threshold">延迟阈值（ms）</Label>
+            <Input id="cfg-threshold" type="number" min={1000} max={60000} value={data.latency_threshold_ms} onChange={(e) => set("latency_threshold_ms", e.target.value)} placeholder="留空用全局 6000" />
+          </div>
+        </div>
+      </details>
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
           <Switch id="cfg-enabled" checked={data.enabled} onCheckedChange={(v) => set("enabled", v)} />
@@ -118,4 +140,5 @@ export function ConfigForm({ data, onChange, isEdit, groups }: ConfigFormProps) 
 export const defaultConfigForm = (): ConfigFormData => ({
   name: "", type: "openai", model: "", endpoint: "", api_key: "",
   group_name: "", request_header: "", metadata: "", stream_mode: "stream", enabled: true, is_maintenance: false,
+  tags: [], check_interval_override: "", latency_threshold_ms: "",
 });

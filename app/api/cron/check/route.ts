@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   }
 
   const pollIntervalMs = getPollingIntervalMs();
-  const decision = await getScheduledCheckDecision(pollIntervalMs);
+  const decision = await getScheduledCheckDecision();
 
   if (!decision.due) {
     return NextResponse.json({

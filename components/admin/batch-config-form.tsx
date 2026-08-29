@@ -37,6 +37,14 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [modelQuery, setModelQuery] = useState("");
+
+  const filteredModels = modelQuery.trim()
+    ? models.filter((m) =>
+        m.id.toLowerCase().includes(modelQuery.trim().toLowerCase()) ||
+        m.name.toLowerCase().includes(modelQuery.trim().toLowerCase())
+      )
+    : models;
 
   const set = (key: keyof BatchConfigFormData, value: string | boolean | Set<string>) =>
     onChange({ ...data, [key]: value });
@@ -96,11 +104,15 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
   }
 
   function toggleAllModels() {
-    if (data.selectedModels.size === models.length) {
-      set("selectedModels", new Set());
+    // 作用于当前筛选出的子集：全已选则取消这批，否则并入这批
+    const allSelected = filteredModels.length > 0 && filteredModels.every((m) => data.selectedModels.has(m.id));
+    const next = new Set(data.selectedModels);
+    if (allSelected) {
+      filteredModels.forEach((m) => next.delete(m.id));
     } else {
-      set("selectedModels", new Set(models.map((m) => m.id)));
+      filteredModels.forEach((m) => next.add(m.id));
     }
+    set("selectedModels", next);
   }
 
   return (
@@ -177,32 +189,45 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
               onClick={toggleAllModels}
               className="text-xs text-primary hover:underline"
             >
-              {data.selectedModels.size === models.length ? "取消全选" : "全选"}
+              {filteredModels.length > 0 && filteredModels.every((m) => data.selectedModels.has(m.id))
+                ? "取消全选"
+                : "全选"}
+              {modelQuery.trim() && filteredModels.length !== models.length ? "（当前筛选）" : ""}
             </button>
           </div>
+          <Input
+            value={modelQuery}
+            onChange={(e) => setModelQuery(e.target.value)}
+            placeholder="搜索模型名称筛选…"
+            className="h-8 text-xs"
+          />
           <div className="max-h-60 overflow-y-auto rounded-md border border-border p-3 space-y-2">
-            {models.map((model) => (
-              <label
-                key={model.id}
-                className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-2 rounded transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={data.selectedModels.has(model.id)}
-                  onChange={() => toggleModel(model.id)}
-                  className="h-4 w-4 cursor-pointer accent-primary"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{model.name}</div>
-                  {model.description && (
-                    <div className="text-xs text-muted-foreground">{model.description}</div>
-                  )}
-                </div>
-              </label>
-            ))}
+            {filteredModels.length === 0 ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">无匹配模型</p>
+            ) : (
+              filteredModels.map((model) => (
+                <label
+                  key={model.id}
+                  className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-2 rounded transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={data.selectedModels.has(model.id)}
+                    onChange={() => toggleModel(model.id)}
+                    className="h-4 w-4 cursor-pointer accent-primary"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{model.name}</div>
+                    {model.description && (
+                      <div className="text-xs text-muted-foreground">{model.description}</div>
+                    )}
+                  </div>
+                </label>
+              ))
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
-            已选择 {data.selectedModels.size} 个模型
+            共 {models.length} 个模型{modelQuery.trim() ? ` · 筛选出 ${filteredModels.length} 个` : ""} · 已选择 {data.selectedModels.size} 个
           </p>
         </div>
       )}

@@ -1230,6 +1230,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
              </div>
            )}
 
+           {/* 控件组：宽屏挤一排靠右，窄屏自动换行堆叠 */}
+           <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
            {/* Sort Mode Selector */}
            {hasMultipleGroups && (
              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1348,6 +1350,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                  </button>
                ))}
              </div>
+           </div>
            </div>
 
            {/* Status Pill */}

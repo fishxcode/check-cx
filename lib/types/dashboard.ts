@@ -47,10 +47,22 @@ export interface GlobalGroupHealthItem {
   errorReasons: GlobalGroupHealthErrorReason[];
 }
 
+/** 分组卡片可配置显隐的指标键 */
+export type GlobalGroupHealthMetricKey =
+  | "successRate"
+  | "avgUseTime"
+  | "cacheRate"
+  | "cacheRequestRate";
+
+/** 各指标是否展示的开关映射 */
+export type GlobalGroupHealthMetricVisibility = Record<GlobalGroupHealthMetricKey, boolean>;
+
 export interface GlobalGroupHealthSummary {
   available: boolean;
   enabled: boolean;
   showErrorReasons: boolean;
+  /** 分组卡片/列表各指标的显隐配置（后台可配） */
+  metricVisibility: GlobalGroupHealthMetricVisibility;
   updatedAt: string | null;
   defaultWindow: GlobalGroupHealthWindow;
   windows: GlobalGroupHealthWindow[];

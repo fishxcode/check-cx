@@ -14,11 +14,29 @@ interface ModelInfo {
   description?: string;
 }
 
-async function fetchOpenAIModels(endpoint: string, apiKey: string): Promise<ModelInfo[]> {
+/**
+ * 由 chat/completions 等业务端点推导 /models 列表地址。
+ * 兼容带路径前缀的网关：仅将结尾的 chat/completions|responses|messages 替换为 models，
+ * 无法识别时回退到同目录下的 models，保留原有前缀。
+ */
+function deriveModelsUrl(endpoint: string): string {
   const url = new URL(endpoint);
-  url.pathname = "/v1/models";
+  const path = url.pathname.replace(/\/+$/, "");
+  const replaced = path.replace(/\/(chat\/completions|completions|responses|messages)$/i, "/models");
+  if (replaced !== path) {
+    url.pathname = replaced;
+  } else if (/\/models$/i.test(path)) {
+    // 已是 models 端点，保持不变
+  } else {
+    // 回退：同层级追加 models
+    url.pathname = `${path}/models`.replace(/\/{2,}/g, "/");
+  }
+  url.search = "";
+  return url.toString();
+}
 
-  const res = await fetch(url.toString(), {
+async function fetchOpenAIModels(endpoint: string, apiKey: string): Promise<ModelInfo[]> {
+  const res = await fetch(deriveModelsUrl(endpoint), {
     headers: { Authorization: `Bearer ${apiKey}` },
     signal: AbortSignal.timeout(10000),
   });
@@ -26,16 +44,11 @@ async function fetchOpenAIModels(endpoint: string, apiKey: string): Promise<Mode
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
   const data = await res.json();
+  // 返回端点吐出的全部模型，不做前缀白名单过滤（网关可能代理 gemini/claude 等各类模型）
   return (data.data || [])
-    .filter((m: { id: string }) =>
-      m.id.includes("gpt") ||
-      m.id.includes("o1") ||
-      m.id.includes("o3")
-    )
-    .map((m: { id: string }) => ({
-      id: m.id,
-      name: m.id,
-    }));
+    .map((m: { id: string }) => ({ id: m.id, name: m.id }))
+    .filter((m: ModelInfo) => Boolean(m.id))
+    .sort((a: ModelInfo, b: ModelInfo) => a.id.localeCompare(b.id));
 }
 
 async function fetchGeminiModels(apiKey: string): Promise<ModelInfo[]> {

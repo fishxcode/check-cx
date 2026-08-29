@@ -19,7 +19,17 @@ export interface CheckConfigRow {
   metadata?: Record<string, unknown> | null;
   group_name?: string | null;
   stream_mode?: "stream" | "generate" | null;
+  tags?: string[] | null;
+  locked?: boolean;
+  locked_at?: string | null;
+  locked_by?: string | null;
+  lock_reason?: string | null;
+  paused_until?: string | null;
+  check_interval_override?: number | null;
+  latency_threshold_ms?: number | null;
+  next_check_at?: string | null;
   created_at?: string;
+  updated_at?: string;
 }
 
 /**
@@ -113,4 +123,69 @@ export interface AlertHistoryRow {
   payload: Record<string, unknown> | null;
   error_message: string | null;
   triggered_at: string;
+}
+
+/** config_audit_log 表的行类型 */
+export type AuditAction =
+  | "create" | "update" | "delete"
+  | "enable" | "disable"
+  | "lock" | "unlock"
+  | "pause" | "resume";
+
+export interface ConfigAuditLogRow {
+  id: string;
+  config_id: string;
+  action: AuditAction;
+  actor_id: string;
+  actor_email: string;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  changed_fields: string[] | null;
+  reason: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+/** error_recommendations 表的行类型 */
+export type ErrorCategory =
+  | "network" | "auth" | "rate_limit" | "model" | "validation" | "unknown";
+
+export interface ErrorRecommendationRow {
+  id: string;
+  category: ErrorCategory;
+  severity: "critical" | "high" | "medium" | "low";
+  title: string;
+  description: string;
+  action_items: string[];
+  pattern_matchers: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** error_patterns 表的行类型 */
+export interface ErrorPatternRow {
+  id: string;
+  pattern_hash: string;
+  pattern_text: string;
+  category: ErrorCategory;
+  count: number;
+  first_seen: string;
+  last_seen: string;
+  affected_config_ids: string[];
+  recommendation_id: string | null;
+  updated_at: string;
+}
+
+/** diagnostic_results 表的行类型 */
+export interface DiagnosticResultRow {
+  id: string;
+  config_id: string;
+  started_at: string;
+  completed_at: string;
+  total_duration_ms: number;
+  layers: Record<string, unknown>;
+  overall_status: "success" | "partial" | "failed";
+  recommendations: unknown[];
+  created_at: string;
 }
