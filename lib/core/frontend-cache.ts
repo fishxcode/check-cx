@@ -98,10 +98,12 @@ export function setCache(
   etag?: string
 ): void {
   const key = getCacheKey(trendPeriod);
-  const ttlMs =
+  const ttlMs = Math.min(
     Number.isFinite(data.pollIntervalMs) && data.pollIntervalMs > 0
       ? data.pollIntervalMs
-      : DEFAULT_CACHE_TTL_MS;
+      : DEFAULT_CACHE_TTL_MS,
+    60_000
+  );
   cache.set(key, {
     data,
     timestamp: Date.now(),

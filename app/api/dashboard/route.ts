@@ -41,6 +41,8 @@ export async function GET(request: Request) {
 
   // 计算缓存时间
   const pollIntervalSeconds = Math.floor(getPollingIntervalMs() / 1000);
+  // 展示刷新上限 60s，与后端采集间隔解耦
+  const displayRefreshSeconds = Math.min(pollIntervalSeconds, 60);
 
   // 构建响应
   const response = NextResponse.json(data);
@@ -50,12 +52,12 @@ export async function GET(request: Request) {
   response.headers.set("Cache-Control", "public, no-cache");
 
   // CDN-Cache-Control: Cloudflare 边缘节点缓存
-  response.headers.set("CDN-Cache-Control", `max-age=${pollIntervalSeconds}`);
+  response.headers.set("CDN-Cache-Control", `max-age=${displayRefreshSeconds}`);
 
   // Cloudflare-CDN-Cache-Control: 支持 stale-while-revalidate
   response.headers.set(
     "Cloudflare-CDN-Cache-Control",
-    `max-age=${pollIntervalSeconds}, stale-while-revalidate=${DATA_CHANGE_CYCLE_SECONDS}`
+    `max-age=${displayRefreshSeconds}, stale-while-revalidate=${DATA_CHANGE_CYCLE_SECONDS}`
   );
 
   // ETag
