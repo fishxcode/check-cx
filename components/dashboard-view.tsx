@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ExternalLink,
   Github,
+  Globe,
   GripVertical,
   LayoutGrid,
   List,
+  Loader2,
   RefreshCcw,
   Search,
   Settings,
@@ -448,6 +450,14 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   const lastUrlStateRef = useRef("");
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // 定时检测运行状态（检测中/上次/下次），由 /api/poller-status 轮询
+  const [pollerStatus, setPollerStatus] = useState<{
+    running: boolean;
+    lastStartedAt: string | null;
+    lastCheckedAt: string | null;
+    nextExpectedAt: string | null;
+    intervalLabel: string;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
@@ -540,6 +550,21 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     setIsDndReady(true);
   }, []);
 
+  // Tab 状态：groups（分组监控）| global（全局分组）
+  const [activeTab, setActiveTab] = useState<"groups" | "global">("groups");
+
+  // 更新 URL 同步 tab 状态（?tab=global / ?tab=groups / 兼容旧参数）
+  const updateTabUrl = useCallback((tab: "groups" | "global") => {
+    setActiveTab(tab);
+    // 基于 window.location.search 而非 searchParams，避免 React 异步状态下的旧值残留
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    params.set("tab", tab);
+    // 保留旧参数兼容：global=1 等价 tab=global
+    if (tab === "global") params.set("global", "1");
+    else params.delete("global");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [router]);
+
   useEffect(() => {
     const params = searchParams;
     hasUrlStateRef.current = params.size > 0;
@@ -549,6 +574,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     const nextPeriod = getValidParam(params.get("period"), VALID_PERIODS);
     const nextGlobalWindow = getValidParam(params.get("window"), VALID_GLOBAL_WINDOWS);
     const globalOpen = params.get("global") === "1" || params.get("global") === "open";
+    // Tab 解析：?tab= 新参数优先，兼容 ?global=1 旧参数（仅当无 tab 参数时用 global 推断，避免切换后循环）
+    const tabParam = params.get("tab");
+    const nextTab: "groups" | "global" | null =
+      tabParam === "global" ? "global"
+      : tabParam === "groups" ? "groups"
+      : globalOpen ? "global"
+      : null;
     const groupsParam: GroupsParam =
       params.get("groups") === "open" || params.get("groups") === "closed"
         ? (params.get("groups") as GroupsParam)
@@ -571,6 +603,11 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       setIsGlobalGroupHealthOpen(true);
     } else if (globalOpen) {
       setIsGlobalGroupHealthOpen(true);
+    }
+    // Tab 参数：只有明确指定时切换（?tab=global 时同步打开全局面板）
+    if (nextTab) {
+      setActiveTab(nextTab);
+      if (nextTab === "global") setIsGlobalGroupHealthOpen(true);
     }
     if (groupsParam === "open") {
       setOpenGroupNames(new Set(groupedNames));
@@ -766,6 +803,27 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     prefetchDashboardData(["7d", "15d", "30d"], currentPeriod).catch(() => undefined);
   }, [data.trendPeriod]);
 
+  // 定时拉取检测运行状态（每 15 秒），用于展示「检测中/上次检测/下次预计」
+  useEffect(() => {
+    let active = true;
+    const loadPollerStatus = async () => {
+      try {
+        const res = await fetch("/api/poller-status", { cache: "no-store" });
+        if (!res.ok) return;
+        const status = await res.json();
+        if (active) setPollerStatus(status);
+      } catch {
+        // 静默失败，不阻塞 Dashboard
+      }
+    };
+    void loadPollerStatus();
+    const timer = window.setInterval(loadPollerStatus, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     const firstGroup = groupedTimelines.find((group) => group.groupName !== UNGROUPED_KEY);
     if (!firstGroup) {
@@ -921,7 +979,18 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
 
     // Sort based on sort mode
     if (sortMode === "custom") {
-      // Keep the user's drag-and-drop order
+      // 「定时监控优先展示」：仅在用户未自定义分组顺序时生效。
+      // 有活跃检测历史的分组（有 Provider 检测记录）排在无历史的前面，
+      // 各自内部保持原顺序（稳定排序）；用户拖拽过后尊重其修改，不再干预。
+      if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
+        const hasActiveTimeline = (groupName: string): boolean => {
+          const group = groupedTimelineMap.get(groupName);
+          return !!group && group.timelines.some((t) => t.items.length > 0);
+        };
+        const activeGroups = result.filter(hasActiveTimeline);
+        const inactiveGroups = result.filter((name) => !hasActiveTimeline(name));
+        return [...activeGroups, ...inactiveGroups];
+      }
       return result;
     }
 
@@ -955,7 +1024,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     });
 
     return result;
-  }, [groupedNames, groupedTimelineMap, orderedGroupNames, searchQuery, selectedTags, sortMode]);
+  }, [groupedNames, groupedTimelineMap, orderedGroupNames, persistedGroupOrder, searchQuery, selectedTags, sortMode]);
 
   // 搜索从无到有时：自动展开当前筛选结果（保留原“搜索时自动展开”语义）
   useEffect(() => {
@@ -1362,6 +1431,35 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
               <span className="text-xs font-semibold uppercase tracking-wider">Operational</span>
            </div>
 
+           {/* 定时检测状态（由 /api/poller-status 每 15 秒刷新） */}
+           {pollerStatus && (
+             <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-[10px] font-medium text-muted-foreground">
+               {pollerStatus.running ? (
+                 <>
+                   <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                   <span className="text-primary">检测进行中…</span>
+                 </>
+               ) : (
+                 <>
+                   <span className={cn("h-1.5 w-1.5 rounded-full", pollerStatus.lastCheckedAt ? "bg-green-500" : "bg-muted-foreground/40")} />
+                   <span>上次检测</span>
+                   {pollerStatus.lastCheckedAt ? (
+                     <ClientTime value={pollerStatus.lastCheckedAt} className="tabular-nums" />
+                   ) : (
+                     <span>—</span>
+                   )}
+                   {pollerStatus.nextExpectedAt && (
+                     <>
+                       <span className="opacity-30">|</span>
+                       <span>下次</span>
+                       <ClientTime value={pollerStatus.nextExpectedAt} className="tabular-nums" />
+                     </>
+                   )}
+                 </>
+               )}
+             </div>
+           )}
+
            {lastUpdated && (
              <div className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
                 <div className="flex items-center gap-1.5">
@@ -1387,24 +1485,56 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         </div>
       </header>
 
+      {/* Tab 切换器：分组监控 / 全局分组 */}
+      <div className="mb-4 flex items-center gap-1 rounded-xl border border-border/60 bg-background/50 p-1 backdrop-blur-sm w-fit">
+        <button
+          type="button"
+          onClick={() => updateTabUrl("groups")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+            activeTab === "groups"
+              ? "bg-foreground text-background shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <LayoutGrid className="h-4 w-4" />
+          分组监控
+        </button>
+        <button
+          type="button"
+          onClick={() => updateTabUrl("global")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+            activeTab === "global"
+              ? "bg-foreground text-background shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Globe className="h-4 w-4" />
+          全局分组
+        </button>
+      </div>
+
       <main
         className={cn(
           "relative z-10 min-h-[50vh] transition-opacity duration-200",
           isRefreshing && "opacity-80"
         )}
       >
-        <GlobalGroupHealthPanel
-          summary={data.globalGroupHealth}
-          searchQuery={searchQuery}
-          sortMode={sortMode}
-          viewMode={viewMode}
-          isOpen={isGlobalGroupHealthOpen}
-          onOpenChange={setIsGlobalGroupHealthOpen}
-          initialWindow={globalWindow}
-          onWindowChange={setGlobalWindow}
-          analysisHref={analysisHref}
-        />
-        {total === 0 && !hasGlobalGroupHealthContent ? (
+        {activeTab === "global" && (
+          <GlobalGroupHealthPanel
+            summary={data.globalGroupHealth}
+            searchQuery={searchQuery}
+            sortMode={sortMode}
+            viewMode={viewMode}
+            isOpen={isGlobalGroupHealthOpen}
+            onOpenChange={setIsGlobalGroupHealthOpen}
+            initialWindow={globalWindow}
+            onWindowChange={setGlobalWindow}
+            analysisHref={analysisHref}
+          />
+        )}
+        {activeTab === "groups" && (total === 0 && !hasGlobalGroupHealthContent ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
             <div className="mb-4 rounded-full bg-muted/50 p-4">
               <Activity className="h-8 w-8 text-muted-foreground" />
@@ -1458,6 +1588,15 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
               ))}
             </div>
           )
+        ))}
+        {activeTab === "global" && total === 0 && !hasGlobalGroupHealthContent && (
+          <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
+            <div className="mb-4 rounded-full bg-muted/50 p-4">
+              <Globe className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold">暂无全局分组数据</h3>
+            <p className="text-muted-foreground">全局分组监控数据源暂不可用或尚未配置</p>
+          </div>
         )}
       </main>
     </div>

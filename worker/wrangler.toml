@@ -1,0 +1,14 @@
+name = "check-cx-cron-trigger"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Cloudflare Cron Trigger：每 30 分钟触发一次检测
+# 实际执行调 status.fishxcode.com/api/internal/checks/run
+[triggers]
+crons = ["*/30 * * * *"]
+
+# 环境变量（在 Cloudflare Dashboard 或 wrangler secret 配置）
+# CHECK_CX_API_BASE - 检测 API 基础地址，默认 https://status.fishxcode.com
+# SCHEDULER_TOKEN - admin 设置的 scheduler token（Bearer 认证）
+[vars]
+CHECK_CX_API_BASE = "https://status.fishxcode.com"
