@@ -1,6 +1,7 @@
 "use client";
 
-import {ExternalLink, Radio, Zap} from "lucide-react";
+import {useEffect, useState} from "react";
+import {ExternalLink, Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
@@ -10,6 +11,7 @@ import {HoverCard, HoverCardContent, HoverCardTrigger} from "@/components/ui/hov
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline} from "@/lib/types";
 import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/status";
 import {ClientTime} from "@/components/client-time";
+import {loadConfigState} from "@/lib/utils/admin-config-state";
 import {cn} from "@/lib/utils";
 
 interface ProviderCardProps {
@@ -56,6 +58,42 @@ export function ProviderCard({
     ? OFFICIAL_STATUS_META[officialStatus.status]
     : null;
 
+  // 管理员身份探测：调轻量 admin API，200 为管理员（显示管理控件）
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [toggling, setToggling] = useState<"enabled" | "maintenance" | null>(null);
+  const [configState, setConfigState] = useState<{ enabled: boolean; is_maintenance: boolean } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    // 探测管理员身份
+    fetch("/api/admin/dashboard-order", {cache: "no-store"})
+      .then((res) => { if (active && res.ok) setIsAdmin(true); })
+      .catch(() => {});
+    // 拉配置状态（模块级缓存，全页共享）
+    loadConfigState()
+      .then((map) => { if (active) setConfigState(map[id] ?? null); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [id]);
+
+  /** 启用/维护切换：根据当前配置状态双向切换，成功后刷新页面 */
+  async function toggleField(field: "enabled" | "maintenance") {
+    setToggling(field);
+    try {
+      const body = field === "enabled"
+        ? { enabled: !(configState?.enabled ?? true), force_update: true }
+        : { is_maintenance: !(configState?.is_maintenance ?? false), force_update: true };
+      const res = await fetch(`/api/admin/configs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) location.reload();  // 刷新使数据一致；管理操作不频繁
+    } finally {
+      setToggling(null);
+    }
+  }
+
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-background/40 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20">
       {/* Decorative markers */}
@@ -75,6 +113,42 @@ export function ProviderCard({
                 <h3 className="flex-1 truncate text-sm font-bold leading-none tracking-tight text-foreground sm:text-base">
                   {latest.name}
                 </h3>
+                {isAdmin && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {/* 启用/禁用 */}
+                    <button
+                      type="button"
+                      disabled={toggling !== null}
+                      onClick={() => toggleField("enabled")}
+                      title={configState?.enabled ? "点击禁用检测" : "点击启用检测"}
+                      className={cn(
+                        "rounded-md p-1 transition-colors",
+                        configState?.enabled
+                          ? "text-green-600 hover:bg-green-500/10"
+                          : "text-muted-foreground/40 hover:bg-muted",
+                        toggling === "enabled" && "opacity-50"
+                      )}
+                    >
+                      {toggling === "enabled" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    </button>
+                    {/* 维护模式 */}
+                    <button
+                      type="button"
+                      disabled={toggling !== null}
+                      onClick={() => toggleField("maintenance")}
+                      title={configState?.is_maintenance ? "点击关闭维护" : "点击开启维护"}
+                      className={cn(
+                        "rounded-md p-1 transition-colors",
+                        configState?.is_maintenance
+                          ? "text-blue-600 hover:bg-blue-500/10"
+                          : "text-muted-foreground/40 hover:bg-muted",
+                        toggling === "maintenance" && "opacity-50"
+                      )}
+                    >
+                      {toggling === "maintenance" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />}
+                    </button>
+                  </div>
+                )}
                 <Badge
                   variant={preset.badge}
                   className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-md"

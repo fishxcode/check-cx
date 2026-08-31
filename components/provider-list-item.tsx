@@ -1,6 +1,7 @@
 "use client";
 
-import {Radio, Zap} from "lucide-react";
+import {useEffect, useState} from "react";
+import {Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {AvailabilityStats} from "@/components/availability-stats";
 import {ClientTime} from "@/components/client-time";
@@ -8,6 +9,7 @@ import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
 import {Badge} from "@/components/ui/badge";
 import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/status";
+import {loadConfigState} from "@/lib/utils/admin-config-state";
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline} from "@/lib/types";
 import {cn} from "@/lib/utils";
 
@@ -27,13 +29,46 @@ export function ProviderListItem({
   availabilityStats,
   selectedPeriod,
 }: ProviderListItemProps) {
-  const {latest, items} = timeline;
+  const {id, latest, items} = timeline;
   const preset = STATUS_META[latest.status];
   const isMaintenance = latest.status === "maintenance";
   const officialStatus = latest.officialStatus;
   const officialStatusMeta = officialStatus
     ? OFFICIAL_STATUS_META[officialStatus.status]
     : null;
+
+  // 管理员身份探测 + 配置状态（共享缓存）
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [toggling, setToggling] = useState<"enabled" | "maintenance" | null>(null);
+  const [configState, setConfigState] = useState<{ enabled: boolean; is_maintenance: boolean } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/admin/dashboard-order", {cache: "no-store"})
+      .then((res) => { if (active && res.ok) setIsAdmin(true); })
+      .catch(() => {});
+    loadConfigState()
+      .then((map) => { if (active) setConfigState(map[id] ?? null); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [id]);
+
+  async function toggleField(field: "enabled" | "maintenance") {
+    setToggling(field);
+    try {
+      const body = field === "enabled"
+        ? { enabled: !(configState?.enabled ?? true), force_update: true }
+        : { is_maintenance: !(configState?.is_maintenance ?? false), force_update: true };
+      const res = await fetch(`/api/admin/configs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) location.reload();
+    } finally {
+      setToggling(null);
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-border/50 bg-background/40 px-3 py-2.5 backdrop-blur-sm transition-colors hover:border-border/80">
@@ -42,7 +77,43 @@ export function ProviderListItem({
           <div className="flex items-center gap-2">
             <ProviderIcon type={latest.type} className="h-4 w-4 text-muted-foreground" />
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{latest.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-sm font-semibold">{latest.name}</span>
+                {isAdmin && (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      disabled={toggling !== null}
+                      onClick={() => toggleField("enabled")}
+                      title={configState?.enabled ? "点击禁用检测" : "点击启用检测"}
+                      className={cn(
+                        "rounded p-0.5 transition-colors",
+                        configState?.enabled
+                          ? "text-green-600 hover:bg-green-500/10"
+                          : "text-muted-foreground/40 hover:bg-muted",
+                        toggling === "enabled" && "opacity-50"
+                      )}
+                    >
+                      {toggling === "enabled" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={toggling !== null}
+                      onClick={() => toggleField("maintenance")}
+                      title={configState?.is_maintenance ? "点击关闭维护" : "点击开启维护"}
+                      className={cn(
+                        "rounded p-0.5 transition-colors",
+                        configState?.is_maintenance
+                          ? "text-blue-600 hover:bg-blue-500/10"
+                          : "text-muted-foreground/40 hover:bg-muted",
+                        toggling === "maintenance" && "opacity-50"
+                      )}
+                    >
+                      {toggling === "maintenance" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3" />}
+                    </button>
+                  </span>
+                )}
+              </div>
               <div className="truncate text-[10px] font-medium text-muted-foreground">
                 {PROVIDER_LABEL[latest.type]} · {latest.model}
               </div>
