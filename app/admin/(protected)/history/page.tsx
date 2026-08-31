@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { History, Filter, RefreshCw, Search, Trash2, Eye, Loader2 } from "lucide-react";
+import { History, Filter, RefreshCw, Search, Trash2, Eye, Loader2, PauseCircle } from "lucide-react";
 import { Pagination } from "@/components/admin/pagination";
 import { CrudDialog } from "@/components/admin/crud-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -54,6 +54,9 @@ export default function HistoryPage() {
   const [selected, setSelected]       = useState<Set<string>>(new Set());
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchDeleting, setBatchDeleting]     = useState(false);
+  const [batchStopOpen, setBatchStopOpen]     = useState(false);
+  const [batchStopping, setBatchStopping]     = useState(false);
+  const [batchStopError, setBatchStopError]   = useState("");
   const [detailRow, setDetailRow]     = useState<HistoryRow | null>(null);
   const [togglingId, setTogglingId]   = useState<string | null>(null);
 
@@ -123,6 +126,31 @@ export default function HistoryPage() {
     load();
   }
 
+  /** 批量停止检测：选中记录所属的配置去重后禁用（enabled=false），停止未来检测 */
+  async function handleBatchStop() {
+    setBatchStopping(true);
+    // 从选中行提取配置 ID（去重：同一配置的多条记录只停一次）
+    const configIds = Array.from(new Set(
+      rows.filter((r) => selected.has(String(r.id))).map((r) => r.config_id)
+    ));
+    const res = await fetch("/api/admin/configs/batch-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: configIds, enabled: false, force_update: true }),
+    });
+    setBatchStopping(false);
+    if (res.ok) {
+      setBatchStopOpen(false);
+      setSelected(new Set());
+      load();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setBatchStopOpen(false);
+      setBatchStopError(d.error ?? "停止检测失败，请稍后重试");
+      setTimeout(() => setBatchStopError(""), 3000);
+    }
+  }
+
   const allSelected = filtered.length > 0 && filtered.every((r) => selected.has(String(r.id)));
   const someSelected = filtered.some((r) => selected.has(String(r.id)));
 
@@ -183,6 +211,14 @@ export default function HistoryPage() {
           <div className="flex items-center gap-2">
             <button onClick={() => setSelected(new Set())} className="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors">
               取消选择
+            </button>
+            <button
+              onClick={() => setBatchStopOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 transition-all"
+              title="禁用所选记录所属的配置，停止未来检测"
+            >
+              <PauseCircle className="h-3.5 w-3.5" />
+              停止检测
             </button>
             <button
               onClick={() => setBatchDeleteOpen(true)}
@@ -295,6 +331,17 @@ export default function HistoryPage() {
       {/* 批量删除确认 */}
       <CrudDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen} title="确认批量删除" onSubmit={handleBatchDelete} loading={batchDeleting}>
         <p className="text-sm text-muted-foreground">将删除已选 <strong>{selected.size}</strong> 条检测记录，此操作不可撤销。</p>
+      </CrudDialog>
+
+      {/* 批量停止检测确认 */}
+      <CrudDialog open={batchStopOpen} onOpenChange={setBatchStopOpen} title="确认停止检测" onSubmit={handleBatchStop} loading={batchStopping}>
+        <div className="space-y-2 text-sm">
+          <p className="text-muted-foreground">
+            将禁用已选记录所属的配置（共 <strong>{Array.from(new Set(rows.filter((r) => selected.has(String(r.id))).map((r) => r.config_id))).length}</strong> 个配置），停止未来检测。此操作不影响历史记录。
+          </p>
+          <p className="text-xs text-amber-600">可在「配置管理」页重新启用这些配置。</p>
+          {batchStopError && <p className="text-sm text-destructive">{batchStopError}</p>}
+        </div>
       </CrudDialog>
 
       {/* 详情弹窗 */}
