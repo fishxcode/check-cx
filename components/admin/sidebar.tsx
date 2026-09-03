@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Bell, Users, LogOut, Activity, Radio, Zap, Clock, X, ArrowUpRight, SlidersHorizontal, History, BarChart3, ScrollText } from "lucide-react";
+import { LayoutDashboard, Settings, Bell, Users, LogOut, Activity, Radio, Zap, Clock, X, ArrowUpRight, SlidersHorizontal, History, BarChart3, ScrollText, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/admin/groups", label: "分组管理", icon: Users },
   { href: "/admin/notifications", label: "通知管理", icon: Bell },
   { href: "/admin/history", label: "检测历史", icon: History },
+  { href: "/admin/trigger-logs", label: "调度触发", icon: Timer },
   { href: "/admin/audit-logs", label: "审计日志", icon: ScrollText },
   { href: "/admin/settings", label: "系统设置", icon: SlidersHorizontal },
 ];

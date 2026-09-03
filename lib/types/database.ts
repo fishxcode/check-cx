@@ -189,3 +189,22 @@ export interface DiagnosticResultRow {
   recommendations: unknown[];
   created_at: string;
 }
+
+/** worker_trigger_logs 表的行类型（外部调度触发日志） */
+export type WorkerTriggerStatus = "running" | "success" | "failed" | "aborted";
+
+export interface WorkerTriggerLogRow {
+  id: string;
+  attempt_id: string;
+  trigger_type: "worker" | "token";
+  worker_event: "scheduled" | "fetch" | null;
+  token_name: string | null;
+  status: WorkerTriggerStatus;
+  duration_ms: number | null;
+  config_count: number | null;
+  issue_count: number | null;
+  message: string | null;
+  triggered_at: string;
+  finished_at: string | null;
+  created_at: string;
+}

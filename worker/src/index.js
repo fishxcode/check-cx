@@ -6,6 +6,10 @@
  *
  * 认证：Scheduler Token（在 admin 设置页生成）
  * 行为：触发后始终返回 200（不因检测到 failed 配置而报错），检测结果由接口返回。
+ *
+ * 触发留痕：每次触发携带 x-cx-trigger 与 x-cx-attempt-id 请求头，
+ * 服务端 /api/internal/checks/run 收到后写入 worker_trigger_logs 表，
+ * 后台「调度触发」页面可查看记录。
  */
 
 export default {
@@ -13,7 +17,7 @@ export default {
    * Cron 定时触发入口
    */
   async scheduled(event, env, ctx) {
-    const result = await triggerChecks(env);
+    const result = await triggerChecks(env, "scheduled");
     console.log(`[check-cx-cron] 定时触发完成`, JSON.stringify(result));
   },
 
@@ -25,7 +29,7 @@ export default {
     if (request.method !== "GET") {
       return new Response("Method Not Allowed", { status: 405 });
     }
-    const result = await triggerChecks(env);
+    const result = await triggerChecks(env, "fetch");
     return new Response(JSON.stringify(result, null, 2), {
       headers: { "content-type": "application/json" },
     });
@@ -37,7 +41,7 @@ export default {
  * 说明：检测在 Vercel 端执行较慢（30-60s），超出 CF Worker 免费版 30s 超时。
  * 因此这里发出请求后即返回（不等待检测完成），检测在服务端异步进行。
  */
-async function triggerChecks(env) {
+async function triggerChecks(env, eventType) {
   const base = env.CHECK_CX_API_BASE || "https://status.fishxcode.com";
   const token = env.SCHEDULER_TOKEN;
   if (!token) {
@@ -45,6 +49,7 @@ async function triggerChecks(env) {
   }
 
   const url = `${base}/api/internal/checks/run`;
+  const attemptId = crypto.randomUUID();
   try {
     // 发起请求但不等待响应体完整读取；设置 AbortController 5 秒后中止（仅等连接/首包）
     const controller = new AbortController();
@@ -55,6 +60,8 @@ async function triggerChecks(env) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "X-CX-Trigger": eventType,
+        "X-CX-Attempt-Id": attemptId,
       },
       body: JSON.stringify({ failOnIssues: false }),
       signal: controller.signal,
@@ -64,14 +71,15 @@ async function triggerChecks(env) {
     return {
       ok: true,
       status: response.status,
+      attemptId,
       note: "请求已发出，检测在服务端异步进行（可能尚未完成）",
     };
   } catch (error) {
     // abort 是预期的（检测在服务端继续执行），视为已触发成功
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("abort") || message.includes("Abort")) {
-      return { ok: true, note: "请求已发出（等待连接后被中止），检测在服务端进行" };
+      return { ok: true, attemptId, note: "请求已发出（等待连接后被中止），检测在服务端进行" };
     }
-    return { ok: false, error: message };
+    return { ok: false, attemptId, error: message };
   }
 }
