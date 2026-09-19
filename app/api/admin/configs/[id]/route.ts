@@ -5,6 +5,7 @@ import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
 import { clearAvailabilityStatsCache } from "@/lib/database/availability";
+import { clearConfigCache } from "@/lib/database/config-loader";
 import { writeAuditLog, diffFields } from "@/lib/database/audit-log";
 import { normalizeTags, validateOptionalInt, CHECK_INTERVAL_RANGE, LATENCY_THRESHOLD_RANGE } from "@/lib/utils/config-validation";
 
@@ -35,6 +36,7 @@ function clearCaches() {
   clearDashboardDataCache();
   clearGroupDashboardCache();
   clearAvailabilityStatsCache();
+  clearConfigCache();
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

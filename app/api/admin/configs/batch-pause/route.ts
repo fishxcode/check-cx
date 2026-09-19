@@ -5,6 +5,7 @@ import { clearPingCache } from "@/lib/core/global-state";
 import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
 import { clearGroupDashboardCache } from "@/lib/core/group-data";
 import { clearAvailabilityStatsCache } from "@/lib/database/availability";
+import { clearConfigCache } from "@/lib/database/config-loader";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -76,6 +77,7 @@ export async function POST(request: NextRequest) {
   clearDashboardDataCache();
   clearGroupDashboardCache();
   clearAvailabilityStatsCache();
+  clearConfigCache();
 
   return NextResponse.json({ ok: true, count });
 }

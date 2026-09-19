@@ -38,6 +38,16 @@ export function resetConfigCacheMetrics(): void {
 }
 
 /**
+ * 清空配置内存缓存。
+ * 所有写入 check_configs 的接口（创建/更新/删除/导入/暂停恢复等）都必须调用，
+ * 否则 Dashboard 等读取方会继续使用旧配置列表，直到缓存 TTL（轮询间隔）过期。
+ */
+export function clearConfigCache(): void {
+  cache.data = [];
+  cache.lastFetchedAt = 0;
+}
+
+/**
  * 从数据库加载启用的 Provider 配置
  * @returns Provider 配置列表
  */
