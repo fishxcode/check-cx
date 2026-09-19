@@ -50,13 +50,8 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
     onChange({ ...data, [key]: value });
 
   async function fetchModels() {
-    if (!data.type || !data.api_key) {
-      setError("请先选择类型并输入 API Key");
-      return;
-    }
-
-    if (data.type === "openai" && !data.endpoint) {
-      setError("OpenAI 需要提供端点");
+    if (!data.type || !data.endpoint || !data.api_key) {
+      setError("请先填写端点并输入 API Key");
       return;
     }
 
@@ -81,10 +76,18 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
       }
 
       const result = await res.json();
-      setModels(result.models || []);
+      const list: ModelInfo[] = result.models || [];
+      setModels(list);
 
-      if (result.models.length === 0) {
+      if (list.length === 0) {
         setError("未找到可用模型");
+      }
+
+      // 重新获取后剔除已不存在于新列表中的旧选中项
+      const ids = new Set(list.map((m) => m.id));
+      const pruned = new Set([...data.selectedModels].filter((id) => ids.has(id)));
+      if (pruned.size !== data.selectedModels.size) {
+        set("selectedModels", pruned);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "获取模型列表失败");
@@ -134,13 +137,13 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
 
       <div className="space-y-1.5">
         <Label htmlFor="batch-endpoint">端点 *</Label>
-        <Input
-          id="batch-endpoint"
-          required
-          value={data.endpoint}
-          onChange={(e) => set("endpoint", e.target.value)}
-          placeholder="https://api.openai.com/v1/chat/completions"
-        />
+          <Input
+            id="batch-endpoint"
+            required
+            value={data.endpoint}
+            onChange={(e) => set("endpoint", e.target.value)}
+            placeholder="https://gateway.example.com/v1/chat/completions（或 /v1/messages 等）"
+          />
       </div>
 
       <div className="space-y-1.5">
@@ -159,7 +162,7 @@ export function BatchConfigForm({ data, onChange, groups }: BatchConfigFormProps
         <button
           type="button"
           onClick={fetchModels}
-          disabled={loading || !data.type || !data.api_key}
+          disabled={loading || !data.type || !data.endpoint || !data.api_key}
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all"
         >
           {loading ? (
