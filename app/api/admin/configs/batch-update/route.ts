@@ -1,11 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
-import { clearGroupDashboardCache } from "@/lib/core/group-data";
-import { clearAvailabilityStatsCache } from "@/lib/database/availability";
-import { clearConfigCache } from "@/lib/database/config-loader";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
 import { normalizeTags } from "@/lib/utils/config-validation";
 
 async function requireAuth() {
@@ -90,11 +86,7 @@ export async function POST(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  clearPingCache();
-  clearDashboardDataCache();
-  clearGroupDashboardCache();
-  clearAvailabilityStatsCache();
-  clearConfigCache();
+  clearAllCaches();
 
   return NextResponse.json({ ok: true, count: targetIds.length, skippedLocked: lockedIds });
 }

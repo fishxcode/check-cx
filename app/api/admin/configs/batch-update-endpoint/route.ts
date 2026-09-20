@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearConfigCache } from "@/lib/database/config-loader";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -37,8 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 清理后端缓存
-    clearPingCache();
-    clearConfigCache();
+    clearAllCaches();
 
     return NextResponse.json({ count: ids.length }, { status: 200 });
   } catch (error) {

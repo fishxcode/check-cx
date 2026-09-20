@@ -2,6 +2,7 @@ import {NextResponse, type NextRequest} from "next/server";
 
 import {createAdminClient} from "@/lib/supabase/admin";
 import {createClient} from "@/lib/supabase/server";
+import {clearAllCaches} from "@/lib/core/cache-invalidation";
 import {refreshSiteSettings} from "@/lib/core/site-settings";
 
 const DASHBOARD_GROUP_ORDER_KEY = "dashboard.group_order";
@@ -89,6 +90,8 @@ export async function PUT(request: NextRequest) {
   }
 
   await refreshSiteSettings({force: true});
+  // 首页分组排序有变，失效看板缓存让前台立即生效
+  clearAllCaches();
 
   return NextResponse.json({ok: true, groupOrder: unique});
 }

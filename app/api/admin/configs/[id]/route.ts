@@ -1,11 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
-import { clearGroupDashboardCache } from "@/lib/core/group-data";
-import { clearAvailabilityStatsCache } from "@/lib/database/availability";
-import { clearConfigCache } from "@/lib/database/config-loader";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
 import { writeAuditLog, diffFields } from "@/lib/database/audit-log";
 import { normalizeTags, validateOptionalInt, CHECK_INTERVAL_RANGE, LATENCY_THRESHOLD_RANGE } from "@/lib/utils/config-validation";
 
@@ -29,14 +25,6 @@ function snapshot(row: Record<string, unknown> | null): Record<string, unknown> 
   const { api_key: _omit, ...rest } = row;
   void _omit;
   return rest;
-}
-
-function clearCaches() {
-  clearPingCache();
-  clearDashboardDataCache();
-  clearGroupDashboardCache();
-  clearAvailabilityStatsCache();
-  clearConfigCache();
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -77,7 +65,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const { data: after } = await admin.from("check_configs").select("*").eq("id", id).single();
-  clearCaches();
+  clearAllCaches();
 
   const beforeSnap = snapshot(before);
   const afterSnap = snapshot(after);
@@ -124,7 +112,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const { data: after } = await admin.from("check_configs").select("*").eq("id", id).single();
-  clearCaches();
+  clearAllCaches();
 
   // 判定动作类型：启用/禁用切换单独标注
   let action = "update";
@@ -174,6 +162,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { error } = await admin.from("check_configs").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  clearCaches();
+  clearAllCaches();
   return NextResponse.json({ ok: true });
 }

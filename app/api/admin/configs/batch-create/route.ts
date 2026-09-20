@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
-import { clearGroupDashboardCache } from "@/lib/core/group-data";
-import { clearAvailabilityStatsCache } from "@/lib/database/availability";
-import { clearConfigCache } from "@/lib/database/config-loader";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
+import { runChecksForConfigs } from "@/lib/core/config-check-execution";
+import type { ProviderConfig, ProviderType } from "@/lib/types";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -64,12 +62,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // 清理后端缓存
-    clearPingCache();
-    clearDashboardDataCache();
-    clearGroupDashboardCache();
-    clearAvailabilityStatsCache();
-    clearConfigCache();
+    // 全量失效前台缓存，并立即执行首检，让前台下一轮刷新就能看到新配置
+    clearAllCaches();
+    if (enabled !== false && !is_maintenance) {
+      const firstCheckConfigs: ProviderConfig[] = configs.map((row, index) => ({
+        id: data[index].id,
+        name: row.name,
+        type: type as ProviderType,
+        model: row.model,
+        endpoint,
+        apiKey: api_key,
+        is_maintenance,
+        requestHeaders: row.request_header || null,
+        metadata: row.metadata || null,
+        groupName: row.group_name || null,
+        streamMode: row.stream_mode || null,
+      }));
+      void runChecksForConfigs(firstCheckConfigs).catch(() => {});
+    }
 
     return NextResponse.json({ count: data.length, ids: data.map((d) => d.id) }, { status: 201 });
   } catch (error) {

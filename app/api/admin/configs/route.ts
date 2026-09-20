@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
+import { runChecksForConfigs } from "@/lib/core/config-check-execution";
+import type { ProviderConfig, ProviderType } from "@/lib/types";
 import { normalizeTags, validateOptionalInt, CHECK_INTERVAL_RANGE, LATENCY_THRESHOLD_RANGE } from "@/lib/utils/config-validation";
 
 function maskKey(key: string) {
@@ -66,8 +68,25 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // 清理后端缓存，让前台重新获取最新配置
-  clearPingCache();
+  // 全量失效前台缓存，并立即执行一次首检，
+  // 否则要等配置缓存和看板缓存的 TTL（轮询间隔）依次过期后前台才能看到新配置
+  clearAllCaches();
+  if (enabled !== false) {
+    const firstCheckConfig: ProviderConfig = {
+      id: data.id,
+      name,
+      type: type as ProviderType,
+      model,
+      endpoint,
+      apiKey: api_key,
+      is_maintenance: is_maintenance ?? false,
+      requestHeaders: request_header || null,
+      metadata: metadata || null,
+      groupName: group_name || null,
+      streamMode: stream_mode || null,
+    };
+    void runChecksForConfigs([firstCheckConfig]).catch(() => {});
+  }
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }

@@ -1,11 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { clearPingCache } from "@/lib/core/global-state";
-import { clearDashboardDataCache } from "@/lib/core/dashboard-data";
-import { clearGroupDashboardCache } from "@/lib/core/group-data";
-import { clearAvailabilityStatsCache } from "@/lib/database/availability";
-import { clearConfigCache } from "@/lib/database/config-loader";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -27,11 +23,7 @@ export async function POST(request: NextRequest) {
   const { error, count } = await admin.from("check_configs").update({ paused_until: null, pause_reason: null }).in("id", ids);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  clearPingCache();
-  clearDashboardDataCache();
-  clearGroupDashboardCache();
-  clearAvailabilityStatsCache();
-  clearConfigCache();
+  clearAllCaches();
 
   return NextResponse.json({ ok: true, count });
 }

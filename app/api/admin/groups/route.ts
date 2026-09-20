@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clearAllCaches } from "@/lib/core/cache-invalidation";
 
 async function requireAuth() {
   const supabase = await createClient();
@@ -24,5 +25,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { error } = await admin.from("group_info").insert({ group_name, display_name: display_name || null, description: description || null, website_url: website_url || null, icon_url: icon_url || null });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // 分组展示信息有变，失效前台相关缓存
+  clearAllCaches();
   return NextResponse.json({ ok: true }, { status: 201 });
 }
