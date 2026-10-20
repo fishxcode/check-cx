@@ -2,7 +2,7 @@
 
 import {useEffect, useState} from "react";
 import Link from "next/link";
-import {ExternalLink, Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
+import {Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
@@ -165,15 +165,6 @@ export function ProviderCard({
                 <Link href={getModelPath(latest.model)} className="break-all font-mono opacity-70 transition-colors hover:text-foreground hover:opacity-100">
                   {latest.model}
                 </Link>
-                <a
-                  href={`https://fishxcode.com/rankings/model/${encodeURIComponent(latest.model)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
-                  aria-label={`查看 ${latest.model} 排行`}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </a>
               </div>
             </div>
           </div>
