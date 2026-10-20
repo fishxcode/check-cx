@@ -1,6 +1,7 @@
 "use client";
 
 import type {AvailabilityPeriod, AvailabilityStat} from "@/lib/types";
+import {useMonitoringDisplay} from "@/components/monitoring-display-context";
 import {cn} from "@/lib/utils";
 
 interface AvailabilityStatsProps {
@@ -10,6 +11,7 @@ interface AvailabilityStatsProps {
 }
 
 const PERIOD_LABELS: Record<AvailabilityPeriod, string> = {
+  "24h": "近 24 小时",
   "7d": "7 天",
   "15d": "15 天",
   "30d": "30 天",
@@ -26,6 +28,9 @@ function getAvailabilityColorStyle(pct: number | null | undefined) {
 }
 
 export function AvailabilityStats({ stats, period, isMaintenance }: AvailabilityStatsProps) {
+  const display = useMonitoringDisplay();
+  if (!display.showSla) return null;
+  if (!display.available) return null;
   const current = stats?.find((item) => item.period === period);
   const pct = current?.availabilityPct ?? null;
   const pctLabel = pct === null ? "—" : `${pct.toFixed(2)}%`;
@@ -40,7 +45,7 @@ export function AvailabilityStats({ stats, period, isMaintenance }: Availability
           </p>
           <p className="text-[10px] text-blue-500/70">
             {current
-              ? `维护前 ${current.operationalCount}/${current.totalChecks} 成功`
+              ? `维护前 ${current.successCount ?? current.operationalCount}/${current.totalChecks} 成功`
               : "维护中 · 已暂停统计"}
           </p>
         </div>
@@ -59,7 +64,7 @@ export function AvailabilityStats({ stats, period, isMaintenance }: Availability
         </p>
         <p className="text-[10px] text-muted-foreground">
           {current
-            ? `${current.operationalCount}/${current.totalChecks} 成功`
+            ? `${current.successCount ?? current.operationalCount}/${current.totalChecks} 成功`
             : "暂无数据"}
         </p>
       </div>

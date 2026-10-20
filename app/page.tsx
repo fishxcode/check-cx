@@ -1,3 +1,5 @@
+import {publicMetadata} from "@/lib/core/public-metadata";
+import {getSiteSeoConfig} from "@/lib/core/site-seo";
 import {DashboardBootstrap} from "@/components/dashboard-bootstrap";
 import {ClientYear} from "@/components/client-time";
 import {getSiteSettingSync, refreshSiteSettings} from "@/lib/core/site-settings";
@@ -44,4 +46,9 @@ export default async function Home() {
       </footer>
     </div>
   );
+}
+
+export async function generateMetadata() {
+  const site = await getSiteSeoConfig();
+  return publicMetadata({title: site.title, description: site.description, path: "/", scope: {scope: "all"}});
 }

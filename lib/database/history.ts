@@ -14,7 +14,7 @@ import {logError} from "../utils";
 export const MAX_POINTS_PER_PROVIDER = 60;
 
 const DEFAULT_RETENTION_DAYS = 30;
-const MIN_RETENTION_DAYS = 7;
+const MIN_RETENTION_DAYS = 30;
 const MAX_RETENTION_DAYS = 365;
 
 export const HISTORY_RETENTION_DAYS = (() => {
@@ -93,9 +93,20 @@ class SnapshotStore {
       ping_latency_ms: result.pingLatencyMs,
       checked_at: result.checkedAt,
       message: result.message,
+      model_snapshot: result.model,
+      group_snapshot: result.groupName ?? null,
+      attribution_source: "recorded",
     }));
 
-    const { error } = await supabase.from("check_history").insert(records);
+    let { error } = await supabase.from("check_history").insert(records);
+    // 滚动部署期间旧数据库没有快照列，仍保存探测结果；迁移后自动使用快照。
+    if (error?.code === "PGRST204" && /model_snapshot|group_snapshot|attribution_source/.test(error.message)) {
+      const legacyRecords = records.map(({model_snapshot, group_snapshot, attribution_source, ...record}) => {
+        void model_snapshot; void group_snapshot; void attribution_source;
+        return record;
+      });
+      ({error} = await supabase.from("check_history").insert(legacyRecords));
+    }
     if (error) {
       logError("写入历史记录失败", error);
       return;

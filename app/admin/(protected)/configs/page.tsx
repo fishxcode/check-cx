@@ -23,6 +23,10 @@ import { TagFilter } from "@/components/tag-filter";
 import type { ProviderType } from "@/lib/types";
 
 interface ConfigRow {
+  sync_enabled?: boolean;
+  sync_disabled?: boolean;
+  sync_missing_count?: number;
+  sync_checked_at?: string | null;
   id: string;
   name: string;
   type: string;
@@ -108,6 +112,21 @@ export default function ConfigsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleSync(action: "enable" | "disable" | "preview" | "sync") {
+    setBatchRunning(true);
+    try {
+      const response = await fetch("/api/admin/configs/sync", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, ids: [...selected]})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "同步失败");
+      if (result.results) {
+        const labels: Record<string, string> = {present: "目录中存在", missing: "目录中缺失", unavailable: "目录或写入不可用", stale: "配置已变化，结果未应用"};
+        setMsg(result.results.length ? result.results.map((item: {name: string; state: string; missingCount: number; syncDisabled: boolean; groupDifference?: {configured: string; availableGroups: string[]}}) => `${item.name}：${labels[item.state]}，已确认缺失 ${item.missingCount} 次${item.syncDisabled ? "，同步停用" : ""}${item.groupDifference ? `；公开目录中的分组与当前配置不一致（${item.groupDifference.availableGroups.join("、")}），请确认密钥路由后调整分组` : ""}`).join("；") : "没有到期的同步配置；观测至少间隔 5 分钟，请先纳入同步。");
+      } else setMsg(`已更新 ${result.updated} 条同步配置，锁定配置跳过。`);
+      await load();
+    } catch (error) { setMsg(error instanceof Error ? error.message : "同步失败"); }
+    finally { setBatchRunning(false); }
+  }
 
   const allTags = Array.from(new Set(configs.flatMap((c) => c.tags ?? []))).sort();
 
@@ -573,6 +592,12 @@ export default function ConfigsPage() {
               {batchRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
               批量检测
             </button>
+            <DropdownMenu><DropdownMenuTrigger asChild><button disabled={batchRunning} className="rounded-md border px-3 py-1.5 text-xs">上游同步</button></DropdownMenuTrigger><DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleSync("enable")}>纳入自动同步</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSync("disable")}>取消自动同步</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSync("preview")}>预览目录（不写入）</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSync("sync")}>立即同步到期配置</DropdownMenuItem>
+            </DropdownMenuContent></DropdownMenu>
             {/* 设置型批量操作收进下拉，避免按钮过多 */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -675,6 +700,7 @@ export default function ConfigsPage() {
                       <div className="flex items-center gap-1.5">
                         {row.locked && <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-label={row.lock_reason ?? "已锁定"} />}
                         <span>{row.name}</span>
+                        {row.sync_enabled && <span className="text-xs text-muted-foreground" title={row.sync_checked_at ? `最近成功观测：${row.sync_checked_at}` : "尚未完成观测"}>{row.sync_disabled ? "上游缺失 · 同步停用" : "自动同步"}</span>}
                         <ScheduleBadge pausedUntil={row.paused_until} checkIntervalOverride={row.check_interval_override} latencyThresholdMs={row.latency_threshold_ms} />
                       </div>
                       {row.tags && row.tags.length > 0 && (

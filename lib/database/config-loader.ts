@@ -64,11 +64,15 @@ export async function loadProviderConfigsFromDB(options?: {
     metrics.misses += 1;
 
     const supabase = createAdminClient();
-    const { data, error } = await supabase
+    const query = () => supabase
       .from("check_configs")
       .select("id, name, type, model, endpoint, api_key, is_maintenance, request_header, metadata, group_name, stream_mode, paused_until, check_interval_override, latency_threshold_ms, next_check_at")
       .eq("enabled", true)
       .order("id");
+    let {data, error} = await query().eq("sync_disabled", false);
+    if (error && ["42703", "PGRST204"].includes(error.code) && error.message.includes("sync_disabled")) {
+      ({data, error} = await query());
+    }
 
     if (error) {
       logError("从数据库加载配置失败", error);

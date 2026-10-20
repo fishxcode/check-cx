@@ -1,3 +1,4 @@
+import {getConfiguredModelVendors} from "@/lib/core/model-pricing";
 import type {MetadataRoute} from "next";
 
 import {getAvailableGroups} from "@/lib/core/group-data";
@@ -16,27 +17,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     getMonitoredModelNames(),
   ]);
   const modelSlugMap = getModelSlugMap(modelNames);
-  const now = new Date();
+  const vendors = [...new Map(Object.values(await getConfiguredModelVendors(modelNames)).map((vendor) => [vendor.id, vendor])).values()];
 
   return [
     {
       url: siteUrl,
-      lastModified: now,
       changeFrequency: "always",
       priority: 1,
     },
     ...groups.map((groupName) => ({
       url: `${siteUrl}/group/${encodeURIComponent(groupName)}`,
-      lastModified: now,
       changeFrequency: "hourly" as const,
       priority: 0.8,
     })),
-    ...[...modelSlugMap.values()].map((modelName) => ({
-      url: `${siteUrl}${getModelPath(modelName)}`,
-      lastModified: now,
-      changeFrequency: "hourly" as const,
-      priority: 0.7,
-    })),
+    ...vendors.map((vendor) => ({url: `${siteUrl}/vendor/${encodeURIComponent(vendor.name)}`, changeFrequency: "hourly" as const, priority: 0.7})),
+    ...[...modelSlugMap.values()].flatMap((modelName) => ["", "/performance", "/api"].map((suffix) => ({
+      url: `${siteUrl}${getModelPath(modelName)}${suffix}`, changeFrequency: "hourly" as const, priority: suffix ? 0.6 : 0.7,
+    }))),
   ];
 }
-

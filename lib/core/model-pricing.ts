@@ -1,6 +1,9 @@
 import "server-only";
+import {parseBillingExpression} from "@/lib/utils/billing-expression";
 
 import type {ModelApiEndpoint, ModelPricingMetadata} from "@/lib/types";
+
+import type {ModelVendor} from "@/lib/types/dashboard";
 
 const PRICING_API_URL = "https://fishxcode.com/api/pricing";
 const PRICING_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -18,9 +21,12 @@ interface PricingModel {
   create_cache_ratio?: number;
   enable_groups?: string[];
   supported_endpoint_types?: string[];
+  billing_mode?: string;
+  billing_expr?: string;
 }
 
 interface PricingVendor {
+  icon?: string;
   id: number;
   name: string;
   description?: string;
@@ -110,6 +116,8 @@ function parsePricingCatalog(value: unknown): PricingCatalog | null {
       create_cache_ratio: readOptionalNumber(item.create_cache_ratio),
       enable_groups: readStringArray(item.enable_groups),
       supported_endpoint_types: readStringArray(item.supported_endpoint_types),
+      billing_mode: readOptionalString(item.billing_mode),
+      billing_expr: readOptionalString(item.billing_expr),
     }];
   });
 
@@ -120,6 +128,7 @@ function parsePricingCatalog(value: unknown): PricingCatalog | null {
     return [{
       id: item.id,
       name: item.name,
+      icon: readOptionalString(item.icon),
       description: readOptionalString(item.description),
     }];
   });
@@ -208,9 +217,64 @@ export async function getModelPricingMetadata(
     completionRatio: model.completion_ratio ?? null,
     cacheRatio: model.cache_ratio ?? null,
     createCacheRatio: model.create_cache_ratio ?? null,
+    billingMode: model.billing_mode?.trim() || null,
+    billingExpr: model.billing_expr?.trim() || null,
+    billingTiers: model.billing_expr ? parseBillingExpression(model.billing_expr) : [],
     groups: model.enable_groups ?? [],
     groupRatios,
     supportedEndpointTypes: model.supported_endpoint_types ?? [],
     endpoints,
   };
+}
+
+const VENDOR_BRANDS: Record<string, string> = {
+  Google: "Gemini",
+  Anthropic: "Claude",
+  xAI: "Grok",
+  阿里巴巴: "Qwen",
+  智谱: "GLM",
+};
+
+/** 批量解析当前配置的厂家，不把目录中未配置的模型带入首页。 */
+export async function getConfiguredModelVendors(
+  modelNames: string[]
+): Promise<Record<string, ModelVendor>> {
+  if (modelNames.length === 0) return {};
+  const catalog = await getPricingCatalog();
+  if (!catalog) return {};
+
+  const models = new Map(catalog.data.map((model) => [model.model_name, model]));
+  const vendors = new Map(catalog.vendors.map((vendor) => [vendor.id, vendor]));
+  const entries: Array<[string, ModelVendor]> = [];
+  for (const modelName of new Set(modelNames)) {
+    const model = models.get(modelName);
+    const vendor = model?.vendor_id === undefined ? undefined : vendors.get(model.vendor_id);
+    if (!vendor) continue;
+    const brand = VENDOR_BRANDS[vendor.name];
+    entries.push([modelName, {
+      id: String(vendor.id),
+      name: vendor.name,
+      displayName: brand ? `${brand} / ${vendor.name}` : vendor.name,
+      icon: vendor.icon ?? null,
+    }]);
+  }
+  return Object.fromEntries(entries);
+}
+
+/** 仅输出已配置模型的公开描述，不扩展监控目录。 */
+export async function getConfiguredModelDescriptions(modelNames: string[]): Promise<Record<string, string>> {
+  const catalog = await getPricingCatalog();
+  if (!catalog) return {};
+  const allowed = new Set(modelNames);
+  return Object.fromEntries(catalog.data.filter((model) => allowed.has(model.model_name) && model.description?.trim()).map((model) => [model.model_name, model.description!.trim()]));
+}
+
+/** 仅输出已配置模型中存在倍率的上游模型分组，供未配置渠道分组时作展示标签。 */
+export async function getConfiguredModelGroups(modelNames: string[]): Promise<Record<string, string[]>> {
+  const catalog = await getPricingCatalog();
+  if (!catalog) return {};
+  const allowed = new Set(modelNames);
+  return Object.fromEntries(catalog.data
+    .filter((model) => allowed.has(model.model_name))
+    .map((model) => [model.model_name, [...new Set(model.enable_groups ?? [])].filter((name) => name.trim().length > 0 && Number.isFinite(catalog.groupRatio[name]) && catalog.groupRatio[name] >= 0)]));
 }

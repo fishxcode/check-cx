@@ -1,3 +1,4 @@
+import {runUpstreamSyncIfDue} from "./upstream-sync";
 /**
  * 单次检测执行器
  * 同时服务于常驻轮询器与无状态 Cron 任务
@@ -70,6 +71,7 @@ function buildSkippedResult(
 }
 
 export async function getScheduledCheckDecision(): Promise<PollScheduleDecision> {
+  await runUpstreamSyncIfDue();
   // 与 runPollExecution 使用同一套 next_check_at 驱动的每配置调度，避免决策与执行双轨不一致。
   // 只要存在一个「启用 且 未暂停 且 已到期」的配置即判定 due。
   const allConfigs = await loadProviderConfigsFromDB({forceRefresh: true});
@@ -152,6 +154,7 @@ export async function runPollExecution(
   );
 
   try {
+    await runUpstreamSyncIfDue();
     const allConfigs = await loadProviderConfigsFromDB({
       forceRefresh: options.forceRefreshConfigs,
     });

@@ -13,7 +13,9 @@ import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/stat
 import {loadConfigState} from "@/lib/utils/admin-config-state";
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline} from "@/lib/types";
 import {cn} from "@/lib/utils";
+import {useMonitoringDisplay} from "@/components/monitoring-display-context";
 import {getModelPath} from "@/lib/utils/model-slug";
+import {SourceGroupLabel} from "@/components/source-group-label";
 
 interface ProviderListItemProps {
   timeline: ProviderTimeline;
@@ -32,6 +34,7 @@ export function ProviderListItem({
   selectedPeriod,
 }: ProviderListItemProps) {
   const {id, latest, items} = timeline;
+  const {descriptions} = useMonitoringDisplay();
   const preset = STATUS_META[latest.status];
   const isMaintenance = latest.status === "maintenance";
   const officialStatus = latest.officialStatus;
@@ -80,7 +83,7 @@ export function ProviderListItem({
             <ProviderIcon type={latest.type} className="h-4 w-4 text-muted-foreground" />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-semibold">{latest.name}</span>
+                <Link href={getModelPath(latest.model)} className="truncate rounded-sm text-sm font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{latest.name}</Link>
                 {isAdmin && (
                   <span className="flex shrink-0 items-center gap-0.5">
                     <button
@@ -116,6 +119,8 @@ export function ProviderListItem({
                   </span>
                 )}
               </div>
+              <SourceGroupLabel modelName={latest.model} groupName={latest.groupName} className="mt-1" />
+              {descriptions[latest.model] && <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={descriptions[latest.model]}>{descriptions[latest.model]}</p>}
               <div className="truncate text-[10px] font-medium text-muted-foreground">
                 {PROVIDER_LABEL[latest.type]} ·{" "}
                 <Link href={getModelPath(latest.model)} className="hover:text-foreground hover:underline">
