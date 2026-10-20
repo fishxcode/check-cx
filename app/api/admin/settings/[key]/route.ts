@@ -1,3 +1,4 @@
+import {clearAllCaches} from "@/lib/core/cache-invalidation";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -37,6 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // 更新后端缓存
   await refreshSiteSettings({ force: true });
+  clearAllCaches();
 
   return NextResponse.json({ ok: true });
 }

@@ -3,6 +3,11 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Activity, ExternalLink, LayoutGrid, List, RefreshCcw} from "lucide-react";
 
+import Link from "next/link";
+import {MonitoringDisplayProvider} from "@/components/monitoring-display-context";
+import {SourceGroupLabel} from "@/components/source-group-label";
+import {getModelPath} from "@/lib/utils/model-slug";
+import {MonitoringSummary} from "@/components/monitoring-summary";
 import {GroupTags} from "@/components/group-tags";
 import {ProviderCard} from "@/components/provider-card";
 import {ProviderListItem} from "@/components/provider-list-item";
@@ -38,6 +43,7 @@ const computeRemainingMs = (
 };
 
 const PERIOD_OPTIONS: Array<{ value: AvailabilityPeriod; label: string }> = [
+  { value: "24h", label: "近 24 小时" },
   { value: "7d", label: "7 天" },
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
@@ -47,11 +53,11 @@ type ViewMode = "card" | "list";
 
 /** Tech-style decorative corner plus marker */
 const CornerPlus = ({ className }: { className?: string }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="1" 
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1"
     className={cn("absolute h-4 w-4 text-muted-foreground/40", className)}
   >
     <line x1="12" y1="0" x2="12" y2="24" />
@@ -71,7 +77,9 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
   );
   const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const lockRef = useRef(false);
+  const refreshSequence = useRef(0);
+  const selectedPeriodRef = useRef(selectedPeriod);
+  useEffect(() => { selectedPeriodRef.current = selectedPeriod; }, [selectedPeriod]);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
     computeRemainingMs(
       initialData.pollIntervalMs,
@@ -92,28 +100,25 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
       forceFresh?: boolean,
       revalidateIfFresh?: boolean
     ) => {
-    if (lockRef.current) {
-      return;
-    }
-    lockRef.current = true;
+    const sequence = ++refreshSequence.current;
+    const targetPeriod = period ?? selectedPeriod;
+    const isCurrent = () => sequence === refreshSequence.current && targetPeriod === selectedPeriodRef.current;
     setIsRefreshing(true);
     try {
-      const targetPeriod = period ?? selectedPeriod;
       const result = await fetchGroupWithCache({
         groupName,
         trendPeriod: targetPeriod,
         forceFresh,
         revalidateIfFresh,
         onBackgroundUpdate: (newData) => {
-          setData(newData);
+          if (isCurrent()) setData(newData);
         },
       });
-      setData(result.data);
+      if (isCurrent()) setData(result.data);
     } catch (error) {
       console.error("[check-cx] 分组自动刷新失败", error);
     } finally {
-      setIsRefreshing(false);
-      lockRef.current = false;
+      if (sequence === refreshSequence.current) setIsRefreshing(false);
     }
   }, [groupName, selectedPeriod]);
 
@@ -126,7 +131,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
 
   useEffect(() => {
     const currentPeriod = data.trendPeriod ?? "7d";
-    prefetchGroupData(groupName, ["7d", "15d", "30d"], currentPeriod).catch(() => undefined);
+    prefetchGroupData(groupName, ["24h", "7d", "15d", "30d"], currentPeriod).catch(() => undefined);
   }, [data.trendPeriod, groupName]);
 
   useEffect(() => {
@@ -222,6 +227,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
   }, [providerTimelines]);
 
   return (
+    <MonitoringDisplayProvider snapshot={data.monitoring} descriptions={data.modelDescriptions} modelGroups={data.modelGroups}>
     <div className="relative">
       <CornerPlus className="fixed left-4 top-4 h-6 w-6 text-border md:left-8 md:top-8" />
       <CornerPlus className="fixed right-4 top-4 h-6 w-6 text-border md:right-8 md:top-8" />
@@ -238,7 +244,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
               Group View
             </span>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="max-w-2xl text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl md:text-5xl">
               {displayName}
@@ -258,7 +264,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
           {data.description && (
             <p className="max-w-2xl text-base text-muted-foreground">{data.description}</p>
           )}
-          
+
            <div className="flex flex-wrap items-center gap-2.5">
             {statusSummary.operational > 0 && (
                <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
@@ -388,6 +394,8 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
         </div>
       </header>
 
+      <div className="mb-6"><MonitoringSummary snapshot={data.monitoring} scopeType="group" scopeKey={groupName} period={selectedPeriod} /></div>
+      {!!data.pendingConfigs?.length && <div className="mb-4 grid gap-3 md:grid-cols-2">{data.pendingConfigs.map((config) => <Link key={config.id} href={getModelPath(config.model)} className="rounded-xl border p-4 hover:bg-muted/30"><p className="font-medium">{config.name}</p><p className="mt-1 text-xs text-muted-foreground">{config.model} · 待检测</p><SourceGroupLabel modelName={config.model} groupName={config.groupName} modelGroups={data.modelGroups?.[config.model]} linkChannel={false} className="mt-2" /></Link>)}</div>}
       {total === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
             <div className="mb-4 rounded-full bg-muted/50 p-4">
@@ -426,5 +434,6 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
         )
       )}
     </div>
+    </MonitoringDisplayProvider>
   );
 }

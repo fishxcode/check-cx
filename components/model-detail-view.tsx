@@ -1,15 +1,23 @@
+"use client";
+
+import {useSearchParams} from "next/navigation";
+import type {AvailabilityPeriod} from "@/lib/types";
+import {MonitoringSummary, MonitoringTrend} from "@/components/monitoring-summary";
 import Link from "next/link";
+import {MonitoringDisplayProvider} from "@/components/monitoring-display-context";
 import {ArrowUpRight, ChevronLeft} from "lucide-react";
 
 import {AvailabilityStats} from "@/components/availability-stats";
 import {ClientTime} from "@/components/client-time";
 import {ModelApiExamples} from "@/components/model-api-examples";
+import {ModelPricingDetail} from "@/components/model-pricing-detail";
 import {ProviderIcon} from "@/components/provider-icon";
 import {Badge} from "@/components/ui/badge";
 import {PROVIDER_LABEL, STATUS_META} from "@/lib/core/status";
 import type {ModelDetailData} from "@/lib/types/model";
 import {getModelPath} from "@/lib/utils/model-slug";
 import {cn} from "@/lib/utils";
+import {SourceGroupLabel} from "@/components/source-group-label";
 
 interface ModelDetailViewProps {
   detail: ModelDetailData;
@@ -18,77 +26,38 @@ interface ModelDetailViewProps {
 
 export type ModelDetailTab = "overview" | "performance" | "api";
 
-const formatValue = (value: number | null): string =>
-  value === null
-    ? "—"
-    : new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 4}).format(value);
-
 const formatLatency = (value: number | null): string =>
   value === null
     ? "—"
     : `${new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 0}).format(value)} ms`;
 
-const formatPercent = (value: number | null): string =>
-  value === null ? "—" : `${value.toFixed(2)}%`;
-
-function getRecentMetrics(detail: ModelDetailData) {
-  const history = detail.sources.flatMap((source) => source.history);
-  const latencies = history.flatMap((item) => item.latencyMs === null ? [] : [item.latencyMs]);
-  const pingLatencies = history.flatMap((item) => item.pingLatencyMs === null ? [] : [item.pingLatencyMs]);
-  const successCount = history.filter((item) => item.status === "operational" || item.status === "degraded").length;
-  const average = (values: number[]) => values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
-
-  return {
-    averageLatency: average(latencies),
-    averagePing: average(pingLatencies),
-    fastestLatency: latencies.length ? Math.min(...latencies) : null,
-    peakLatency: latencies.length ? Math.max(...latencies) : null,
-    successRate: history.length ? (successCount / history.length) * 100 : null,
-  };
-}
-
-function getLatestAverage(detail: ModelDetailData, key: "latencyMs" | "pingLatencyMs") {
-  const values = detail.sources.flatMap((source) => {
-    const value = source.history[0]?.[key];
-    return value === null || value === undefined ? [] : [value];
-  });
-  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
-}
-
-function getAvailabilityAverage(detail: ModelDetailData, period: "7d" | "15d" | "30d") {
-  const stats = detail.sources.flatMap((source) => source.availabilityStats.filter((item) => item.period === period));
-  const totalChecks = stats.reduce((total, item) => total + item.totalChecks, 0);
-  const operationalCount = stats.reduce((total, item) => total + item.operationalCount, 0);
-  return totalChecks ? (operationalCount / totalChecks) * 100 : null;
-}
-
 export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
-  const recentMetrics = getRecentMetrics(detail);
-  const latestStatuses = detail.sources.flatMap((source) => {
+  const params = useSearchParams();
+  const rawPeriod = params.get("period");
+  const period: AvailabilityPeriod = ["24h", "7d", "15d", "30d"].includes(rawPeriod ?? "") ? rawPeriod as AvailabilityPeriod : "7d";
+  const setPeriod = (value: AvailabilityPeriod) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("period", value);
+    window.history.replaceState(null, "", url);
+  };
+  const statistic = detail.monitoring.stats.find((row) => row.scopeType === "model" && row.scopeKey === detail.modelName && row.period === period);
+  const latestStatuses = detail.sources.filter((source) => source.enabled && !source.isMaintenance).flatMap((source) => {
     const status = source.history[0]?.status;
     return status ? [status] : [];
   });
-  const hasActiveSource = detail.sources.some((source) => !source.isMaintenance && source.history.length > 0);
+  const hasActiveSource = detail.sources.some((source) => source.enabled && !source.isMaintenance && source.history.length > 0);
   const overallStatus = latestStatuses.some((status) => status === "failed" || status === "error" || status === "validation_failed")
       ? "failed"
       : latestStatuses.some((status) => status === "degraded")
         ? "degraded"
         : hasActiveSource
           ? "operational"
-          : detail.sources.some((source) => source.isMaintenance)
+          : detail.sources.some((source) => source.enabled && source.isMaintenance)
             ? "maintenance"
             : null;
   const overallStatusMeta = overallStatus ? STATUS_META[overallStatus] : null;
   const pricingUrl = `https://fishxcode.com/pricing/${encodeURIComponent(detail.modelName)}`;
-  const pricingRatios: Array<[string, number | null]> = detail.pricing
-    ? [
-        ["模型倍率", detail.pricing.modelRatio],
-        ["补全倍率", detail.pricing.completionRatio],
-        ["缓存倍率", detail.pricing.cacheRatio],
-      ]
-    : [];
-  const hasPricingRatios = pricingRatios.some(([, value]) => value !== null)
-    || Boolean(detail.pricing?.groupRatios.length);
+  const modelGroups = detail.pricing?.groups.filter((name) => detail.pricing?.groupRatios.some((group) => group.name === name && Number.isFinite(group.ratio) && group.ratio >= 0));
   const tabs: Array<{key: ModelDetailTab; label: string; href: string}> = [
     {key: "overview", label: "概览", href: getModelPath(detail.modelName)},
     {key: "performance", label: "性能", href: `${getModelPath(detail.modelName)}/performance`},
@@ -96,6 +65,7 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
   ];
 
   return (
+    <MonitoringDisplayProvider snapshot={detail.monitoring}>
     <div className="min-h-screen py-5 sm:py-8">
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:gap-8 sm:px-6 lg:px-8">
         <Link
@@ -111,15 +81,15 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
         <div className="min-w-0 flex-1">
           {detail.pricing?.vendor ? (
             <p className="mb-2 text-sm font-medium text-muted-foreground">
-              {detail.pricing.vendor.name}
+              <Link href={`/vendor/${encodeURIComponent(detail.pricing.vendor.name)}`} className="hover:underline">{detail.pricing.vendor.name}</Link>
             </p>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="min-w-0 break-words text-2xl font-semibold leading-tight text-foreground sm:text-3xl">{detail.modelName}</h1>
-            {overallStatusMeta ? <Badge variant={overallStatusMeta.badge}>{overallStatusMeta.label}</Badge> : null}
+            {overallStatusMeta ? <Badge variant={overallStatusMeta.badge}>{overallStatusMeta.label}</Badge> : <Badge variant="secondary">{detail.sources.some((source) => source.enabled) ? "等待检测" : "已停用 · 保留历史"}</Badge>}
           </div>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-            {detail.pricing?.description ?? "Check CX 模型健康监控详情"}
+          <p className="mt-3 max-w-3xl whitespace-pre-line text-sm leading-7 text-muted-foreground">
+            {detail.pricing?.description?.trim() || "暂无模型介绍；下方展示已配置渠道的监控数据。"}
           </p>
           {detail.pricing?.tags.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -146,7 +116,7 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
               {tabs.map((tab) => (
                 <Link
                   key={tab.key}
-                  href={tab.href}
+                  href={`${tab.href}?period=${period}`}
                   aria-current={activeTab === tab.key ? "page" : undefined}
                   className={cn(
                     "cursor-pointer border-b-2 px-4 py-3 text-sm font-medium transition-[border-color,color,background-color] duration-200",
@@ -161,89 +131,30 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
             </div>
           </nav>
 
+          <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-medium">统计时间窗口</p><div className="flex flex-wrap gap-1 rounded-xl bg-muted/50 p-1">{(["24h", "7d", "15d", "30d"] as const).map((value) => <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)} className={cn("rounded-lg px-4 py-2 text-sm transition focus-visible:outline focus-visible:outline-2", period === value ? "bg-background font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground")}>{value === "24h" ? "近 24 小时" : `${value.slice(0, -1)} 天`}</button>)}</div></div>
+          <MonitoringSummary snapshot={detail.monitoring} scopeType="model" scopeKey={detail.modelName} period={period} />
           {activeTab === "overview" ? (
         <section aria-labelledby="model-overview-heading">
           <h2 id="model-overview-heading" className="mb-4 text-base font-semibold">模型概览</h2>
-          <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden border border-border/50 bg-border/50 lg:grid-cols-4">
-            {[
-              ["最近对话延迟均值", formatLatency(getLatestAverage(detail, "latencyMs"))],
-              ["最近端点 PING 均值", formatLatency(getLatestAverage(detail, "pingLatencyMs"))],
-              ["7 天可用率", formatPercent(getAvailabilityAverage(detail, "7d"))],
-              ["近期平均延迟", formatLatency(recentMetrics.averageLatency)],
-            ].map(([label, value]) => (
-              <div key={label} className="relative min-w-0 bg-background px-3 py-3.5 transition-[background-color,box-shadow] duration-200 hover:z-10 hover:bg-muted/40 hover:shadow-sm sm:px-4 sm:py-4">
-                <p className="min-h-8 text-xs leading-4 text-muted-foreground sm:min-h-0">{label}</p>
-                <p className="mt-1 break-words font-mono text-base font-semibold sm:mt-2 sm:text-lg">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {detail.pricing && hasPricingRatios ? (
-            <section aria-labelledby="model-ratios-heading" className="mb-6 border-y border-border/50 py-5">
-              <div className="mb-4">
-                <h3 id="model-ratios-heading" className="text-sm font-semibold">模型倍率</h3>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  展示定价接口提供的倍率参数，不代表货币单价。
-                </p>
-              </div>
-
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {pricingRatios.filter(([, value]) => value !== null).map(([label, value]) => (
-                  <div key={label} className="min-w-0 border border-border/50 p-3">
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="mt-1 break-words font-mono text-sm font-medium">
-                      {formatValue(value)}x
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-
-              {detail.pricing.groupRatios.length > 0 ? (
-                <div className="mt-5">
-                  <h4 className="mb-2 text-xs font-medium text-muted-foreground">分组倍率</h4>
-                  <div className="overflow-x-auto border border-border/50">
-                    <table className="w-full min-w-[280px] text-left text-sm">
-                      <thead className="border-b border-border/50 text-xs text-muted-foreground">
-                        <tr>
-                          <th scope="col" className="px-3 py-2 font-medium">分组</th>
-                          <th scope="col" className="px-3 py-2 text-right font-medium">倍率</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/40">
-                        {detail.pricing.groupRatios
-                          .filter((item) => Number.isFinite(item.ratio))
-                          .map((item) => (
-                            <tr key={item.name}>
-                              <td className="max-w-[70vw] break-words px-3 py-2">{item.name}</td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
-                                {formatValue(item.ratio)}x
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
+          {detail.pricing ? <ModelPricingDetail pricing={detail.pricing} sources={detail.sources} /> : null}
 
           <div className="grid gap-3 lg:grid-cols-3">
             {detail.sources.map((source) => {
               const latest = source.history[0];
-              const status = source.isMaintenance ? "maintenance" : latest?.status;
+              const status = !source.enabled ? null : source.isMaintenance ? "maintenance" : latest?.status;
               const statusMeta = status ? STATUS_META[status] : null;
               return (
-                <div key={source.id} className="min-w-0 border border-border/50 p-4 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-sm sm:p-5">
+                <div key={source.id} className="min-w-0 rounded-2xl bg-card border border-border/50 p-4 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-sm sm:p-5">
                   <div className="flex items-center gap-2">
                     <ProviderIcon type={source.providerType} className="h-4 w-4 text-muted-foreground" />
                     <span className="truncate text-sm font-semibold">{source.name}</span>
                   </div>
+                  <SourceGroupLabel modelName={detail.modelName} groupName={source.groupName} modelGroups={modelGroups} className="mt-2" />
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     {statusMeta ? (
                       <Badge variant={statusMeta.badge}>{statusMeta.label}</Badge>
                     ) : (
-                      <Badge variant="secondary">暂无记录</Badge>
+                      <Badge variant="secondary">{source.enabled ? "暂无记录" : "已停用 · 历史记录"}</Badge>
                     )}
                     <span className="text-xs text-muted-foreground">
                       最近延迟 <span className="font-mono text-foreground">{latest ? formatLatency(latest.latencyMs) : "—"}</span>
@@ -267,30 +178,6 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
                   </p>
                 ) : null}
                 <dl className="grid gap-x-8 gap-y-4 border-y border-border/50 py-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <dt className="text-xs text-muted-foreground">模型倍率</dt>
-              <dd className="mt-1 font-mono text-sm">{formatValue(detail.pricing.modelRatio)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">补全倍率</dt>
-              <dd className="mt-1 font-mono text-sm">{formatValue(detail.pricing.completionRatio)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">缓存倍率</dt>
-              <dd className="mt-1 font-mono text-sm">{formatValue(detail.pricing.cacheRatio)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">创建缓存倍率</dt>
-              <dd className="mt-1 font-mono text-sm">{formatValue(detail.pricing.createCacheRatio)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">模型价格参数</dt>
-              <dd className="mt-1 font-mono text-sm">{formatValue(detail.pricing.modelPrice)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">配额类型</dt>
-              <dd className="mt-1 font-mono text-sm">{detail.pricing.quotaType ?? "—"}</dd>
-            </div>
             <div className="sm:col-span-2 lg:col-span-3">
               <dt className="text-xs text-muted-foreground">支持的端点类型</dt>
               <dd className="mt-2 flex flex-wrap gap-2">
@@ -310,51 +197,19 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
             </p>
           ) : null}
 
-          {activeTab === "performance" ? <section aria-labelledby="model-health-heading" className="min-w-0">
-        <div className="mb-4">
-          <h2 id="model-health-heading" className="text-base font-semibold">
-            健康监控
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            汇总每个监控配置最近最多 24 次检查；历史数据不足以计算 SLA、P95 或 P99。
-          </p>
-        </div>
-
-        <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden border border-border/50 bg-border/50 sm:grid-cols-3 xl:grid-cols-5">
-          {[
-            ["近期平均延迟", formatLatency(recentMetrics.averageLatency)],
-            ["近期峰值延迟", formatLatency(recentMetrics.peakLatency)],
-            ["近期最快响应", formatLatency(recentMetrics.fastestLatency)],
-            ["近期成功率", formatPercent(recentMetrics.successRate)],
-            ["平均端点 PING", formatLatency(recentMetrics.averagePing)],
-          ].map(([label, value]) => (
-            <div key={label} className="relative min-w-0 bg-background px-3 py-3 transition-[background-color,box-shadow] duration-200 hover:z-10 hover:bg-muted/40 hover:shadow-sm sm:px-4">
-              <p className="min-h-8 text-[11px] leading-4 text-muted-foreground sm:min-h-0">{label}</p>
-              <p className="mt-1 break-words font-mono text-sm font-semibold">{value}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
-          {(["7d", "15d", "30d"] as const).map((period) => (
-            <div key={period} className="border border-border/50 p-3 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-sm">
-              <p className="text-xs text-muted-foreground">{period === "7d" ? "7 天" : period === "15d" ? "15 天" : "30 天"} 实际可用率</p>
-              <p className="mt-2 font-mono text-lg font-semibold">{formatPercent(getAvailabilityAverage(detail, period))}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">按已记录检查次数加权</p>
-            </div>
-          ))}
-        </div>
-
+          {activeTab === "performance" ? <section aria-label="模型性能统计" className="min-w-0">
+        <div className="mb-6"><MonitoringTrend statistic={statistic} /></div>
         <div className="divide-y divide-border/50 border-y border-border/50">
           {detail.sources.map((source) => {
             const latest = source.history[0];
-            const status = source.isMaintenance ? "maintenance" : latest?.status;
+            const status = !source.enabled ? null : source.isMaintenance ? "maintenance" : latest?.status;
             const statusMeta = status ? STATUS_META[status] : null;
 
             return (
               <article key={source.id} className="py-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <SourceGroupLabel modelName={detail.modelName} groupName={source.groupName} modelGroups={modelGroups} />
                     <ProviderIcon type={source.providerType} className="h-4 w-4 text-muted-foreground" />
                     <h3 className="truncate text-sm font-semibold">{source.name}</h3>
                     <span className="text-xs text-muted-foreground">
@@ -364,7 +219,7 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
                   {statusMeta ? (
                     <Badge variant={statusMeta.badge}>{statusMeta.label}</Badge>
                   ) : (
-                    <Badge variant="secondary">暂无记录</Badge>
+                    <Badge variant="secondary">{source.enabled ? "暂无记录" : "已停用 · 历史记录"}</Badge>
                   )}
                 </div>
 
@@ -399,10 +254,10 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
                   </div>
 
                   <div>
-                    <p className="mb-2 text-xs text-muted-foreground">可用率</p>
+                    {detail.monitoring.available && detail.monitoring.showSla !== false && <p className="mb-2 text-xs text-muted-foreground">可用率</p>}
                     <AvailabilityStats
                       stats={source.availabilityStats}
-                      period="30d"
+                      period={period}
                       isMaintenance={source.isMaintenance}
                     />
                   </div>
@@ -415,5 +270,6 @@ export function ModelDetailView({detail, activeTab}: ModelDetailViewProps) {
         </div>
       </main>
     </div>
+    </MonitoringDisplayProvider>
   );
 }

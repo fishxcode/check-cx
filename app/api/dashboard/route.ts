@@ -7,7 +7,7 @@ import type {AvailabilityPeriod} from "@/lib/types";
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
-const VALID_PERIODS: AvailabilityPeriod[] = ["7d", "15d", "30d"];
+const VALID_PERIODS: AvailabilityPeriod[] = ["24h", "7d", "15d", "30d"];
 
 /** 数据变化周期：5 分钟 */
 const DATA_CHANGE_CYCLE_SECONDS = 5 * 60;

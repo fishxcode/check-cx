@@ -32,7 +32,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const { searchParams } = new URL(_request.url);
   const period = searchParams.get("trendPeriod");
-  const trendPeriod = (["7d", "15d", "30d"] as AvailabilityPeriod[]).includes(
+  const trendPeriod = (["24h", "7d", "15d", "30d"] as AvailabilityPeriod[]).includes(
     period as AvailabilityPeriod
   )
     ? (period as AvailabilityPeriod)

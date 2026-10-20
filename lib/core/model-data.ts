@@ -2,8 +2,9 @@ import "server-only";
 
 import {cache} from "react";
 
+import {getDisplayMonitoringStatistics} from "./monitoring-display";
 import {getAvailabilityStats} from "@/lib/database/availability";
-import {loadProviderConfigsFromDB} from "@/lib/database/config-loader";
+import {getPublicConfigs} from "@/lib/database/public-configs";
 import {historySnapshotStore, MAX_POINTS_PER_PROVIDER} from "@/lib/database/history";
 import {getModelPricingMetadata} from "@/lib/core/model-pricing";
 import type {ModelDetailData, ModelMonitorSource} from "@/lib/types";
@@ -17,27 +18,30 @@ export const getModelDetail = cache(
       return null;
     }
 
-    const configs = await loadProviderConfigsFromDB();
+    const configs = await getPublicConfigs();
     const matchingConfigs = configs.filter((config) => config.model === modelName);
     if (matchingConfigs.length === 0) {
       return null;
     }
 
     const configIds = matchingConfigs.map((config) => config.id);
-    const [pricing, history, availabilityStats] = await Promise.all([
+    const [pricing, history, availabilityStats, snapshot] = await Promise.all([
       getModelPricingMetadata(modelName),
       historySnapshotStore.fetch({
         allowedIds: configIds,
         limitPerConfig: MAX_POINTS_PER_PROVIDER,
       }),
       getAvailabilityStats(configIds),
+      getDisplayMonitoringStatistics(),
     ]);
 
     const sources: ModelMonitorSource[] = matchingConfigs.map((config) => ({
       id: config.id,
+      enabled: config.enabled && !config.sync_disabled,
       name: config.name,
       providerType: config.type,
       isMaintenance: config.is_maintenance,
+      groupName: config.group_name ?? null,
       availabilityStats: availabilityStats[config.id] ?? [],
       history: (history[config.id] ?? []).slice(0, MODEL_HISTORY_LIMIT).map((item) => ({
         status: item.status,
@@ -47,12 +51,13 @@ export const getModelDetail = cache(
       })),
     }));
 
-    return {modelName, pricing, sources};
+    const monitoring = {...snapshot, stats: snapshot.stats.filter((stat) => stat.scopeType === "model" && stat.scopeKey === modelName)};
+    return {modelName, pricing, sources, monitoring};
   }
 );
 
 export async function getMonitoredModelNames(): Promise<string[]> {
-  const configs = await loadProviderConfigsFromDB();
+  const configs = await getPublicConfigs();
   return [...new Set(configs.map((config) => config.model).filter(Boolean))].sort();
 }
 

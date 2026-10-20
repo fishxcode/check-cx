@@ -6,6 +6,11 @@ export interface ModelGroupRatio {
   name: string;
   ratio: number;
 }
+export interface ModelBillingTier {
+  label: string;
+  condition: string | null;
+  rates: Partial<Record<"p" | "c" | "cr" | "cc" | "cc1h", number>>;
+}
 
 export interface ModelApiEndpoint {
   name: string;
@@ -26,6 +31,9 @@ export interface ModelPricingMetadata {
   completionRatio: number | null;
   cacheRatio: number | null;
   createCacheRatio: number | null;
+  billingMode: string | null;
+  billingExpr: string | null;
+  billingTiers: ModelBillingTier[];
   groups: string[];
   groupRatios: ModelGroupRatio[];
   supportedEndpointTypes: string[];
@@ -40,15 +48,18 @@ export interface ModelHistoryItem {
 }
 
 export interface ModelMonitorSource {
+  enabled: boolean;
   id: string;
   name: string;
   providerType: ProviderType;
   isMaintenance: boolean;
+  groupName: string | null;
   availabilityStats: AvailabilityStat[];
   history: ModelHistoryItem[];
 }
 
 export interface ModelDetailData {
+  monitoring: import("./monitoring").MonitoringSnapshot;
   modelName: string;
   pricing: ModelPricingMetadata | null;
   sources: ModelMonitorSource[];

@@ -1,10 +1,16 @@
 "use client";
 
+import {getModelPath} from "@/lib/utils/model-slug";
+
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePathname, useRouter, useSearchParams} from "next/navigation";
 import {fetchWithCache, prefetchDashboardData, setCache} from "@/lib/core/frontend-cache";
-import {prefetchGroupData} from "@/lib/core/group-frontend-cache";
+import {buildVendorGroups, scopeDashboardToVendor, UNKNOWN_VENDOR} from "@/lib/utils/vendor-groups";
+import type {VendorGroup} from "@/lib/utils/vendor-groups";
+import {VendorIcon} from "@/components/vendor-icon";
 import Link from "next/link";
+import {MonitoringDisplayProvider} from "@/components/monitoring-display-context";
+import {SourceGroupLabel} from "@/components/source-group-label";
 import {
   Activity,
   ChevronDown,
@@ -38,6 +44,8 @@ import {
 } from "@dnd-kit/sortable";
 import {CSS} from "@dnd-kit/utilities";
 
+import {MonitoringSummary} from "@/components/monitoring-summary";
+import type {MonitoringSnapshot} from "@/lib/types/monitoring";
 import {GroupTags} from "@/components/group-tags";
 import {GlobalGroupHealthPanel} from "@/components/global-group-health-panel";
 import {ProviderCard} from "@/components/provider-card";
@@ -50,16 +58,14 @@ import type {
   AvailabilityStatsMap,
   DashboardData,
   GlobalGroupHealthWindow,
-  GroupedProviderTimelines,
-  GroupInfoSummary,
   ProviderTimeline,
 } from "@/lib/types";
 import type { SiteConfig } from "@/lib/utils/site-config-cache";
-import { UNGROUPED_DISPLAY_NAME } from "@/lib/types";
 import {cn} from "@/lib/utils";
 import {parseTagList, getTagColorClass} from "@/lib/utils/tag-colors";
 
 interface DashboardViewProps {
+  vendorId?: string;
   /** 首屏由服务端注入的聚合数据，用作前端轮询的初始快照 */
   initialData: DashboardData;
   /** 站点配置（标题、描述、GitHub 链接等） */
@@ -70,10 +76,16 @@ interface DashboardViewProps {
 const getLatestCheckTimestamp = (
   timelines: DashboardData["providerTimelines"]
 ) => {
-  const timestamps = timelines.map((timeline) =>
-    new Date(timeline.latest.checkedAt).getTime()
-  );
-  return timestamps.length > 0 ? Math.max(...timestamps) : null;
+  let latestTimestamp: number | null = null;
+  for (const timeline of timelines) {
+    for (const item of timeline.items) {
+      const timestamp = Date.parse(item.checkedAt);
+      if (Number.isFinite(timestamp) && (latestTimestamp === null || timestamp > latestTimestamp)) {
+        latestTimestamp = timestamp;
+      }
+    }
+  }
+  return latestTimestamp;
 };
 
 const computeRemainingMs = (
@@ -89,6 +101,7 @@ const computeRemainingMs = (
 };
 
 const PERIOD_OPTIONS: Array<{ value: AvailabilityPeriod; label: string }> = [
+  { value: "24h", label: "近 24 小时" },
   { value: "7d", label: "7 天" },
   { value: "15d", label: "15 天" },
   { value: "30d", label: "30 天" },
@@ -100,7 +113,7 @@ type GroupsParam = "open" | "closed" | null;
 
 const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
   { value: "custom", label: "自定义" },
-  { value: "group", label: "按分组" },
+  { value: "group", label: "按厂家" },
   { value: "name", label: "按名称" },
 ];
 
@@ -109,7 +122,7 @@ const CONTROL_BUTTON_CLASS =
 
 const DEFAULT_SITE_TITLE = "Check CX - AI 模型健康监控";
 const DEFAULT_SITE_DESCRIPTION = "实时追踪各大 AI 模型对话接口的可用性、延迟与官方服务状态。";
-const VALID_PERIODS: AvailabilityPeriod[] = ["7d", "15d", "30d"];
+const VALID_PERIODS: AvailabilityPeriod[] = ["24h", "7d", "15d", "30d"];
 const VALID_SORT_MODES: SortMode[] = ["custom", "group", "name"];
 const VALID_VIEW_MODES: ViewMode[] = ["card", "list"];
 const VALID_GLOBAL_WINDOWS: GlobalGroupHealthWindow[] = ["1h", "6h", "12h", "24h", "7d", "15d", "30d"];
@@ -126,61 +139,7 @@ function setOptionalParam(params: URLSearchParams, key: string, value: string): 
   params.delete(key);
 }
 
-// 未分组标识常量
-const UNGROUPED_KEY = "__ungrouped__";
-
-const buildGroupedTimelines = (
-  timelines: DashboardData["providerTimelines"],
-  groupInfos: GroupInfoSummary[]
-): GroupedProviderTimelines[] => {
-  const groupMap = new Map<string, typeof timelines>();
-  const groupInfoMap = new Map<string, GroupInfoSummary>();
-
-  for (const info of groupInfos) {
-    groupInfoMap.set(info.groupName, info);
-  }
-
-  for (const timeline of timelines) {
-    const groupKey = timeline.latest.groupName || UNGROUPED_KEY;
-    if (!groupMap.has(groupKey)) {
-      groupMap.set(groupKey, []);
-    }
-    groupMap.get(groupKey)!.push(timeline);
-  }
-
-  const groups: GroupedProviderTimelines[] = [];
-  const namedGroups = [...groupMap.entries()]
-    .filter(([key]) => key !== UNGROUPED_KEY)
-    .sort(([a], [b]) => a.localeCompare(b));
-
-  for (const [groupName, groupTimelines] of namedGroups) {
-    const info = groupInfoMap.get(groupName);
-    groups.push({
-      groupName,
-      displayName: groupName,
-      websiteUrl: info?.websiteUrl,
-      description: info?.description,
-      tags: info?.tags ?? "",
-      timelines: [...groupTimelines].sort((a, b) =>
-        a.latest.name.localeCompare(b.latest.name)
-      ),
-    });
-  }
-
-  const ungrouped = groupMap.get(UNGROUPED_KEY);
-  if (ungrouped && ungrouped.length > 0) {
-    groups.push({
-      groupName: UNGROUPED_KEY,
-      displayName: UNGROUPED_DISPLAY_NAME,
-      tags: "",
-      timelines: [...ungrouped].sort((a, b) =>
-        a.latest.name.localeCompare(b.latest.name)
-      ),
-    });
-  }
-
-  return groups;
-};
+const UNGROUPED_KEY = UNKNOWN_VENDOR.id;
 
 /**
  * 检查单个 Provider 是否匹配搜索词
@@ -191,6 +150,7 @@ function providerMatchesQuery(
 ): boolean {
   const lower = query.toLowerCase();
   return (
+    (timeline.latest.groupName ?? "").toLowerCase().includes(lower) ||
     timeline.latest.name.toLowerCase().includes(lower) ||           // 名称
     timeline.latest.type.toLowerCase().includes(lower) ||           // 类型 (openai/gemini/anthropic)
     timeline.latest.model.toLowerCase().includes(lower) ||          // 模型 (gpt-4o/claude-opus)
@@ -203,9 +163,9 @@ function providerMatchesQuery(
  * 过滤分组内的 Provider（只显示匹配的）
  */
 function filterProvidersInGroup(
-  group: GroupedProviderTimelines,
+  group: VendorGroup,
   query: string
-): GroupedProviderTimelines | null {
+): VendorGroup | null {
   const lower = query.toLowerCase();
 
   // 如果分组名称/描述匹配，显示所有 Provider
@@ -221,8 +181,11 @@ function filterProvidersInGroup(
     providerMatchesQuery(timeline, lower)
   );
 
-  return filteredTimelines.length > 0
-    ? { ...group, timelines: filteredTimelines }
+  const pendingConfigs = group.pendingConfigs.filter((config) =>
+    [config.name, config.model, config.groupName ?? "", "待检测"].some((value) => value.toLowerCase().includes(lower))
+  );
+  return filteredTimelines.length > 0 || pendingConfigs.length > 0
+    ? { ...group, timelines: filteredTimelines, pendingConfigs }
     : null;
 }
 
@@ -242,7 +205,9 @@ const CornerPlus = ({ className }: { className?: string }) => (
 
 /** 分组面板组件 */
 interface GroupPanelProps {
-  group: GroupedProviderTimelines;
+  monitoring?: MonitoringSnapshot;
+  modelDescriptions?: Record<string, string>;
+  group: VendorGroup;
   timeToNextRefresh: number | null;
   isCoarsePointer: boolean;
   activeOfficialCardId: string | null;
@@ -282,6 +247,8 @@ function SortableGroupPanel(props: GroupPanelProps & { id: string }) {
 }
 
 function GroupPanel({
+  monitoring,
+  modelDescriptions,
   group,
   timeToNextRefresh,
   isCoarsePointer,
@@ -306,7 +273,14 @@ function GroupPanel({
     return counts;
   }, [group.timelines]);
 
-  const groupLink = `/group/${encodeURIComponent(group.groupName)}`;
+  const groupLink = `/vendor/${encodeURIComponent(group.vendor.name)}`;
+  const modelCount = new Set([
+    ...group.timelines.map((timeline) => timeline.latest.model),
+    ...group.pendingConfigs.map((config) => config.model),
+  ]).size;
+  const lastCheckedAt = group.timelines.flatMap((timeline) => timeline.items.map((item) => item.checkedAt))
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 
   return (
     <Collapsible
@@ -329,30 +303,24 @@ function GroupPanel({
         )}
         <CollapsibleTrigger className="group flex flex-1 min-w-0 items-center gap-3 text-left transition hover:opacity-80 focus-visible:outline-none sm:gap-4">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition-colors group-hover:bg-white/80 dark:bg-white/10 dark:ring-white/10 sm:h-10 sm:w-10">
-            <ChevronDown className="h-4 w-4 text-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 sm:h-5 sm:w-5" />
+            <VendorIcon name={group.vendor.name} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <h2 className="truncate text-lg font-bold tracking-tight text-foreground sm:text-2xl">
                 {group.displayName}
               </h2>
+              <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
               <GroupTags tags={group.tags} />
-              {group.websiteUrl && (
-                <a
-                  href={group.websiteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center rounded-full bg-muted/50 p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              )}
+
             </div>
             {group.description && (
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{group.description}</p>
             )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              <span>{modelCount} 个模型 · {group.timelines.length + group.pendingConfigs.length} 个监控项</span>
+              {group.pendingConfigs.length > 0 && <span>{group.pendingConfigs.length} 待检测</span>}
+              <span>{lastCheckedAt ? <>最近检测 <ClientTime value={lastCheckedAt} /></> : "暂无检测记录"}</span>
                {statusSummary.operational > 0 && (
                  <span className="flex items-center gap-1.5 whitespace-nowrap">
                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -392,17 +360,45 @@ function GroupPanel({
             </div>
           </div>
         </CollapsibleTrigger>
+              {group.websiteUrl && (
+                <a
+                  href={group.websiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center rounded-full bg-muted/50 p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
         
         <Link
             href={groupLink}
             className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground p-0 text-sm font-medium text-background transition-all hover:bg-foreground/90 sm:h-10 sm:w-auto sm:gap-2 sm:px-5 sm:hover:px-6"
         >
-            <span className="hidden whitespace-nowrap sm:inline">详情</span>
+            <span className="hidden whitespace-nowrap sm:inline">查看模型</span>
             <ExternalLink className="h-3.5 w-3.5 opacity-70" />
         </Link>
       </div>
 
+      <div className="mt-4"><MonitoringSummary snapshot={monitoring} scopeType="vendor" scopeKey={group.vendor.id} period={selectedPeriod} compact /></div>
       <CollapsibleContent className="animate-in fade-in-0 slide-in-from-top-2">
+        {group.pendingConfigs.length > 0 && (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {group.pendingConfigs.map((config) => (
+              <Link key={config.id} href={getModelPath(config.model)} className="block rounded-xl border border-border/50 p-4 transition hover:border-primary/40 hover:bg-muted/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{config.name}</span>
+                  <span className="text-xs text-muted-foreground">待检测</span>
+                </div>
+                <p className="mt-1 break-all text-sm text-muted-foreground">{config.model}</p>
+                {modelDescriptions?.[config.model] && <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{modelDescriptions[config.model]}</p>}
+                <SourceGroupLabel modelName={config.model} groupName={config.groupName} linkChannel={false} />
+                <p className="mt-2 text-xs text-muted-foreground">尚无检测记录，等待定时检测</p>
+              </Link>
+            ))}
+          </div>
+        )}
         {viewMode === "list" ? (
           <div className="mt-2.5 space-y-2">
             {group.timelines.map((timeline) => (
@@ -441,14 +437,17 @@ function GroupPanel({
  * - 负责渲染整体头部统计与 Provider 卡片
  * - 在浏览器端按 pollIntervalMs 定时拉取 /api/dashboard 并维护倒计时
  */
-export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
+export function DashboardView({ initialData, siteConfig, vendorId }: DashboardViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const hasUrlStateRef = useRef(false);
   const hasHydratedUrlStateRef = useRef(false);
-  const lastUrlStateRef = useRef("");
-  const [data, setData] = useState(initialData);
+  const appliedLocationRef = useRef<string | null>(null);
+  const skipUrlWriteRef = useRef(false);
+  const refreshSequenceRef = useRef(0);
+  const [snapshot, setData] = useState(initialData);
+  const data = useMemo(() => scopeDashboardToVendor(snapshot, vendorId), [snapshot, vendorId]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // 定时检测运行状态（检测中/上次/下次），由 /api/poller-status 轮询
   const [pollerStatus, setPollerStatus] = useState<{
@@ -463,37 +462,45 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
     computeRemainingMs(
       initialData.pollIntervalMs,
-      getLatestCheckTimestamp(initialData.providerTimelines),
+      getLatestCheckTimestamp(scopeDashboardToVendor(initialData, vendorId).providerTimelines),
       initialData.generatedAt
     )
   );
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [isDndReady, setIsDndReady] = useState(false);
   const [activeOfficialCardId, setActiveOfficialCardId] = useState<string | null>(null);
-  const siteTitle = siteConfig?.title?.trim() || DEFAULT_SITE_TITLE;
+  const vendorTitle = vendorId ? buildVendorGroups(data)[0]?.displayName : undefined;
+  const siteTitle = vendorId ? (vendorTitle ?? "厂家监控") : (siteConfig?.title?.trim() || DEFAULT_SITE_TITLE);
   const siteDescription = siteConfig?.description?.trim() || DEFAULT_SITE_DESCRIPTION;
   const siteLogoUrl = siteConfig?.logoUrl?.trim() || "";
   
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
   const availabilityStats: AvailabilityStatsMap = data.availabilityStats ?? {};
-  const [selectedPeriod, setSelectedPeriod] = useState<AvailabilityPeriod>(
-    data.trendPeriod ?? "7d"
+  const [selectedPeriod, setSelectedPeriod] = useState<AvailabilityPeriod>(() =>
+    getValidParam(searchParams.get("period"), VALID_PERIODS) ?? "7d"
   );
+  const selectedPeriodRef = useRef(selectedPeriod);
+  useEffect(() => {
+    selectedPeriodRef.current = selectedPeriod;
+  }, [selectedPeriod]);
   const [sortMode, setSortMode] = useState<SortMode>("custom");
   const [viewMode, setViewMode] = useState<ViewMode>("card");
   const isPeriodLoading = isRefreshing && selectedPeriod !== data.trendPeriod;
-  const [openGroupNames, setOpenGroupNames] = useState<Set<string>>(() => new Set());
+  const [openGroupNames, setOpenGroupNames] = useState<Set<string>>(() => {
+    const groups = vendorId ? buildVendorGroups(scopeDashboardToVendor(initialData, vendorId)) : [];
+    return new Set(groups.map((group) => group.groupName));
+  });
   const [isGlobalGroupHealthOpen, setIsGlobalGroupHealthOpen] = useState(false);
   const [globalWindow, setGlobalWindow] = useState<GlobalGroupHealthWindow>("24h");
   const prevSearchActiveRef = useRef(false);
 
   const initialGroupedTimelines = useMemo(
-    () => buildGroupedTimelines(initialData.providerTimelines, initialData.groupInfos),
-    [initialData.groupInfos, initialData.providerTimelines]
+    () => buildVendorGroups(scopeDashboardToVendor(initialData, vendorId)),
+    [initialData, vendorId]
   );
   const groupedTimelines = useMemo(
-    () => buildGroupedTimelines(data.providerTimelines, data.groupInfos),
-    [data.groupInfos, data.providerTimelines]
+    () => buildVendorGroups(data),
+    [data]
   );
   const groupedNames = useMemo(
     () => groupedTimelines.map((group) => group.groupName),
@@ -516,19 +523,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     return qs ? `/group/global?${qs}` : "/group/global";
   }, [globalWindow, searchQuery, sortMode, viewMode]);
 
-  const persistedGroupOrder = siteConfig?.groupOrder;
-
-  // Initialize order with server-provided (persisted) order when available
-  const [orderedGroupNames, setOrderedGroupNames] = useState<string[]>(() => {
-    const currentNames = initialGroupedTimelines.map((g) => g.groupName);
-    if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
-      return currentNames;
-    }
-    const currentSet = new Set(currentNames);
-    const validSaved = persistedGroupOrder.filter((name) => currentSet.has(name));
-    const newNames = currentNames.filter((name) => !validSaved.includes(name));
-    return [...validSaved, ...newNames];
-  });
+  const [orderedGroupNames, setOrderedGroupNames] = useState<string[]>(() =>
+    initialGroupedTimelines.map((group) => group.groupName)
+  );
 
   const latestCheckTimestamp = useMemo(
     () => getLatestCheckTimestamp(data.providerTimelines),
@@ -550,7 +547,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     setIsDndReady(true);
   }, []);
 
-  // Tab 状态：groups（分组监控）| global（全局分组）
+  // Tab 状态：groups（模型厂家）| global（全局分组）
   const [activeTab, setActiveTab] = useState<"groups" | "global">("groups");
 
   // 更新 URL 同步 tab 状态（?tab=global / ?tab=groups / 兼容旧参数）
@@ -566,6 +563,11 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   }, [router]);
 
   useEffect(() => {
+    const locationKey = `${pathname}?${searchParams.toString()}`;
+    if (appliedLocationRef.current === locationKey) return;
+    appliedLocationRef.current = locationKey;
+    // 外部导航先恢复 URL 状态，避免同一轮用尚未更新的状态反向覆盖地址。
+    skipUrlWriteRef.current = true;
     const params = searchParams;
     hasUrlStateRef.current = params.size > 0;
     const query = params.get("q") ?? params.get("search");
@@ -577,13 +579,13 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     // Tab 解析：?tab= 新参数优先，兼容 ?global=1 旧参数（仅当无 tab 参数时用 global 推断，避免切换后循环）
     const tabParam = params.get("tab");
     const nextTab: "groups" | "global" | null =
-      tabParam === "global" ? "global"
+      vendorId ? "groups" : tabParam === "global" ? "global"
       : tabParam === "groups" ? "groups"
       : globalOpen ? "global"
       : null;
     const groupsParam: GroupsParam =
-      params.get("groups") === "open" || params.get("groups") === "closed"
-        ? (params.get("groups") as GroupsParam)
+      params.get("vendors") === "open" || params.get("vendors") === "closed"
+        ? (params.get("vendors") as GroupsParam)
         : null;
 
     if (query !== null) {
@@ -595,9 +597,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     if (nextViewMode) {
       setViewMode(nextViewMode);
     }
-    if (nextPeriod) {
-      setSelectedPeriod(nextPeriod);
-    }
+    setSelectedPeriod(nextPeriod ?? "7d");
     if (nextGlobalWindow) {
       setGlobalWindow(nextGlobalWindow);
       setIsGlobalGroupHealthOpen(true);
@@ -615,7 +615,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       setOpenGroupNames(new Set());
     }
 
-  }, [groupedNames, searchParams]);
+  }, [groupedNames, pathname, searchParams, vendorId]);
 
   useEffect(() => {
     // Client-side only: load from localStorage
@@ -625,14 +625,14 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         return;
       }
       // Load sort mode
-      const savedSortMode = localStorage.getItem("check-cx-sort-mode");
+      const savedSortMode = localStorage.getItem("check-cx-vendor-sort-mode");
       if (savedSortMode && ["custom", "group", "name"].includes(savedSortMode)) {
         setSortMode(savedSortMode as SortMode);
       }
 
-      // Load group order from localStorage only when server has no persisted order
-      if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
-        const saved = localStorage.getItem("check-cx-group-order");
+      // 厂家排序独立保存，不读取或覆盖后台的渠道分组顺序。
+      {
+        const saved = localStorage.getItem("check-cx-vendor-group-order");
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
@@ -642,7 +642,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
                   initialGroupedTimelines.map((group) => group.groupName)
                 );
                 // Filter out saved names that no longer exist, and add new ones
-                const validSaved = parsed.filter((name) => currentSet.has(name));
+                const validSaved = [...new Set(parsed.filter((name): name is string => typeof name === "string" && currentSet.has(name)))];
                 const newNames = initialGroupedTimelines
                   .map((group) => group.groupName)
                   .filter((name) => !validSaved.includes(name));
@@ -656,7 +656,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       }
 
       // Load selected tags
-      const savedTags = localStorage.getItem("check-cx-selected-tags");
+      const savedTags = localStorage.getItem("check-cx-vendor-selected-tags");
       if (savedTags) {
         try {
           const parsed = JSON.parse(savedTags);
@@ -669,32 +669,32 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       }
 
       // Load view mode
-      const savedViewMode = localStorage.getItem("check-cx-view-mode");
+      const savedViewMode = localStorage.getItem("check-cx-vendor-view-mode");
       if (savedViewMode && ["card", "list"].includes(savedViewMode)) {
         setViewMode(savedViewMode as ViewMode);
       }
       hasHydratedUrlStateRef.current = true;
     }
-  }, [initialGroupedTimelines, persistedGroupOrder]);
+  }, [initialGroupedTimelines]);
 
   // Save sort mode to localStorage when it changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("check-cx-sort-mode", sortMode);
+      localStorage.setItem("check-cx-vendor-sort-mode", sortMode);
     }
   }, [sortMode]);
 
   // Save selected tags to localStorage when they change
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("check-cx-selected-tags", JSON.stringify(selectedTags));
+      localStorage.setItem("check-cx-vendor-selected-tags", JSON.stringify(selectedTags));
     }
   }, [selectedTags]);
 
   // Save view mode to localStorage when it changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("check-cx-view-mode", viewMode);
+      localStorage.setItem("check-cx-vendor-view-mode", viewMode);
     }
   }, [viewMode]);
 
@@ -728,21 +728,6 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     });
   }, []);
 
-  const persistGroupOrderToDb = useCallback(async (order: string[]) => {
-    try {
-      const res = await fetch("/api/admin/dashboard-order", {
-        method: "PUT",
-        redirect: "manual",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({groupOrder: order}),
-      });
-      // 非管理员/未登录：忽略（仍保留 localStorage 行为）
-      if (!res.ok) return;
-    } catch {
-      // 静默失败，避免影响拖拽体验
-    }
-  }, []);
-
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const {active, over} = event;
     
@@ -754,15 +739,14 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         
         // Save to localStorage
         if (typeof window !== "undefined") {
-          localStorage.setItem("check-cx-group-order", JSON.stringify(newOrder));
+          localStorage.setItem("check-cx-vendor-group-order", JSON.stringify(newOrder));
         }
 
-        void persistGroupOrderToDb(newOrder);
         
         return newOrder;
       });
     }
-  }, [persistGroupOrderToDb]);
+  }, []);
 
   const refresh = useCallback(
     async (
@@ -770,28 +754,34 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       forceFresh?: boolean,
       revalidateIfFresh?: boolean
     ) => {
+    const requestSequence = ++refreshSequenceRef.current;
+    const targetPeriod = period ?? selectedPeriod;
+    const isCurrentRequest = () =>
+      requestSequence === refreshSequenceRef.current &&
+      targetPeriod === selectedPeriodRef.current;
     setIsRefreshing(true);
     try {
-      const targetPeriod = period ?? selectedPeriod;
       const result = await fetchWithCache({
         trendPeriod: targetPeriod,
         forceFresh,
         revalidateIfFresh,
         onBackgroundUpdate: (newData) => {
-          // SWR 模式：后台刷新完成后更新 UI
-          setData(newData);
+          // 只接收当前周期的结果，忽略切换前尚未完成的后台请求。
+          if (isCurrentRequest()) setData(newData);
         },
       });
-      setData(result.data);
+      if (isCurrentRequest()) setData(result.data);
     } catch (error) {
       console.error("[check-cx] 刷新失败", error);
     } finally {
-      setIsRefreshing(false);
+      if (requestSequence === refreshSequenceRef.current) setIsRefreshing(false);
     }
   }, [selectedPeriod]);
 
   useEffect(() => {
-    setData(initialData);
+    if ((initialData.trendPeriod ?? "7d") === selectedPeriodRef.current) {
+      setData(initialData);
+    }
     // 将服务端数据放入前端缓存
     if (initialData.trendPeriod) {
       setCache(initialData.trendPeriod, initialData);
@@ -800,7 +790,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
 
   useEffect(() => {
     const currentPeriod = data.trendPeriod ?? "7d";
-    prefetchDashboardData(["7d", "15d", "30d"], currentPeriod).catch(() => undefined);
+    prefetchDashboardData(["24h", "7d", "15d", "30d"], currentPeriod).catch(() => undefined);
   }, [data.trendPeriod]);
 
   // 定时拉取检测运行状态（每 15 秒），用于展示「检测中/上次检测/下次预计」
@@ -823,17 +813,6 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       window.clearInterval(timer);
     };
   }, []);
-
-  useEffect(() => {
-    const firstGroup = groupedTimelines.find((group) => group.groupName !== UNGROUPED_KEY);
-    if (!firstGroup) {
-      return;
-    }
-    const currentPeriod = data.trendPeriod ?? "7d";
-    prefetchGroupData(firstGroup.groupName, ["7d", "15d", "30d"], currentPeriod).catch(
-      () => undefined
-    );
-  }, [data.trendPeriod, groupedTimelines]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -895,12 +874,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     return "grid-cols-1 md:grid-cols-2";
   }, [total]);
 
-  const hasMultipleGroups = useMemo(() => {
-    return (
-      groupedTimelines.length > 1 ||
-      (groupedTimelines.length === 1 && groupedTimelines[0].groupName !== UNGROUPED_KEY)
-    );
-  }, [groupedTimelines]);
+  const hasMultipleGroups = groupedTimelines.length > 0;
   const hasGlobalGroupHealthContent = useMemo(() => {
     const summary = data.globalGroupHealth;
     if (!summary || summary.enabled === false || summary.available === false) {
@@ -962,8 +936,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         }
       }
 
-      // 更新 groupedTimelineMap 为过滤后的版本
-      Object.assign(groupedTimelineMap, filteredGroups);
+      // 仅筛选键；渲染时使用对应的筛选结果，避免修改 memo 中的 Map。
       result = Array.from(filteredGroups.keys());
     }
 
@@ -979,18 +952,6 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
 
     // Sort based on sort mode
     if (sortMode === "custom") {
-      // 「定时监控优先展示」：仅在用户未自定义分组顺序时生效。
-      // 有活跃检测历史的分组（有 Provider 检测记录）排在无历史的前面，
-      // 各自内部保持原顺序（稳定排序）；用户拖拽过后尊重其修改，不再干预。
-      if (!persistedGroupOrder || persistedGroupOrder.length === 0) {
-        const hasActiveTimeline = (groupName: string): boolean => {
-          const group = groupedTimelineMap.get(groupName);
-          return !!group && group.timelines.some((t) => t.items.length > 0);
-        };
-        const activeGroups = result.filter(hasActiveTimeline);
-        const inactiveGroups = result.filter((name) => !hasActiveTimeline(name));
-        return [...activeGroups, ...inactiveGroups];
-      }
       return result;
     }
 
@@ -1003,28 +964,11 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
       if (a === UNGROUPED_KEY) return 1;
       if (b === UNGROUPED_KEY) return -1;
 
-      if (sortMode === "group") {
-        // Sort by tags: compare tag by tag (first tag, then second, etc.)
-        const tagsA = parseTagList(groupA.tags).map((t) => t.toLowerCase());
-        const tagsB = parseTagList(groupB.tags).map((t) => t.toLowerCase());
-        const maxLen = Math.max(tagsA.length, tagsB.length);
-
-        for (let i = 0; i < maxLen; i++) {
-          const tagA = tagsA[i] || "";
-          const tagB = tagsB[i] || "";
-          const cmp = tagA.localeCompare(tagB);
-          if (cmp !== 0) return cmp;
-        }
-        // If all tags are equal, fall back to displayName
-        return groupA.displayName.toLowerCase().localeCompare(groupB.displayName.toLowerCase());
-      } else {
-        // Sort by displayName
-        return groupA.displayName.toLowerCase().localeCompare(groupB.displayName.toLowerCase());
-      }
+      return groupA.displayName.localeCompare(groupB.displayName, "zh-CN");
     });
 
     return result;
-  }, [groupedNames, groupedTimelineMap, orderedGroupNames, persistedGroupOrder, searchQuery, selectedTags, sortMode]);
+  }, [groupedNames, groupedTimelineMap, orderedGroupNames, searchQuery, selectedTags, sortMode]);
 
   // 搜索从无到有时：自动展开当前筛选结果（保留原“搜索时自动展开”语义）
   useEffect(() => {
@@ -1080,6 +1024,10 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     if (!hasHydratedUrlStateRef.current) {
       return;
     }
+    if (skipUrlWriteRef.current) {
+      skipUrlWriteRef.current = false;
+      return;
+    }
 
     const params = new URLSearchParams(searchParams.toString());
     const query = searchQuery.trim();
@@ -1089,26 +1037,31 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
     setOptionalParam(params, "period", selectedPeriod === "7d" ? "" : selectedPeriod);
     setOptionalParam(params, "global", isGlobalGroupHealthOpen ? "1" : "");
     setOptionalParam(params, "window", globalWindow === "24h" ? "" : globalWindow);
-    setOptionalParam(params, "groups", groupsUrlState ?? "");
+    // 厂家详情默认展开，仅在主动收起时记录折叠参数。
+    const vendorState = vendorId && groupsUrlState === "open" ? "" : groupsUrlState;
+    setOptionalParam(params, "vendors", vendorState ?? "");
 
     const nextUrlState = params.toString();
-    if (lastUrlStateRef.current === nextUrlState) {
+    if (searchParams.toString() === nextUrlState) {
       return;
     }
-    lastUrlStateRef.current = nextUrlState;
-    router.replace(nextUrlState ? `${pathname}?${nextUrlState}` : pathname, {
-      scroll: false,
-    });
+    // 筛选在客户端加载数据；同步地址即可，避免触发整页路由请求及旧参数回写。
+    appliedLocationRef.current = `${pathname}?${nextUrlState}`;
+    window.history.replaceState(
+      null,
+      "",
+      nextUrlState ? `${pathname}?${nextUrlState}` : pathname,
+    );
   }, [
     globalWindow,
     groupsUrlState,
     isGlobalGroupHealthOpen,
     pathname,
-    router,
     searchParams,
     searchQuery,
     selectedPeriod,
     sortMode,
+    vendorId,
     viewMode,
   ]);
 
@@ -1118,7 +1071,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         <Search className="h-8 w-8 text-muted-foreground" />
       </div>
       <h3 className="text-lg font-semibold">没有找到匹配的结果</h3>
-      <p className="text-muted-foreground">尝试搜索分组名称、Provider 名称、类型或状态</p>
+      <p className="text-muted-foreground">尝试搜索厂家、模型、渠道或状态</p>
       {(searchQuery || selectedTags.length > 0) && (
         <button
           type="button"
@@ -1138,11 +1091,15 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   ) : (
     <div className="space-y-4">
       {filteredGroupNames.map((groupName) => {
-        const group = groupedTimelineMap.get(groupName);
+        const originalGroup = groupedTimelineMap.get(groupName);
+        const group = originalGroup && searchQuery.trim()
+          ? filterProvidersInGroup(originalGroup, searchQuery.trim()) : originalGroup;
         if (!group) return null;
         const isOpen = openGroupNames.has(groupName);
         const commonProps = {
           group,
+          monitoring: data.monitoring,
+          modelDescriptions: data.modelDescriptions,
           timeToNextRefresh,
           isCoarsePointer,
           activeOfficialCardId,
@@ -1169,6 +1126,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
   );
 
   return (
+    <MonitoringDisplayProvider snapshot={data.monitoring} descriptions={data.modelDescriptions} modelGroups={data.modelGroups}>
     <div className="relative">
        {/* Corner decorative markers for the main container */}
        <CornerPlus className="fixed left-4 top-4 h-6 w-6 text-border md:left-8 md:top-8" />
@@ -1241,7 +1199,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
              <div className="relative w-full sm:w-60">
                <input
                  type="text"
-                 placeholder="搜索分组或 Provider（名称、类型、状态）..."
+                 placeholder="搜索厂家、模型或渠道..."
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
                  className="h-9 w-full rounded-full border border-border/60 bg-background/50 pl-10 pr-10 text-sm backdrop-blur-sm transition-all duration-200 placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:shadow-sm"
@@ -1364,7 +1322,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
            {/* Expand/Collapse All */}
            {hasMultipleGroups && (
              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-               <span className="pl-1">分组</span>
+               <span className="pl-1">厂家</span>
                <div className="flex items-center gap-1 rounded-full bg-muted/30 p-0.5">
                  <button
                    type="button"
@@ -1485,8 +1443,8 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         </div>
       </header>
 
-      {/* Tab 切换器：分组监控 / 全局分组 */}
-      <div className="mb-4 flex items-center gap-1 rounded-xl border border-border/60 bg-background/50 p-1 backdrop-blur-sm w-fit">
+      {/* Tab 切换器：模型厂家 / 全局分组 */}
+      {!vendorId && <div className="mb-4 flex items-center gap-1 rounded-xl border border-border/60 bg-background/50 p-1 backdrop-blur-sm w-fit">
         <button
           type="button"
           onClick={() => updateTabUrl("groups")}
@@ -1498,7 +1456,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           )}
         >
           <LayoutGrid className="h-4 w-4" />
-          分组监控
+          模型厂家
         </button>
         <button
           type="button"
@@ -1513,8 +1471,9 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
           <Globe className="h-4 w-4" />
           全局分组
         </button>
-      </div>
+      </div>}
 
+      <section className="relative z-10 mb-6 space-y-3"><h2 className="text-sm font-semibold">{vendorId ? "厂家统计" : "全部模型统计"}</h2><MonitoringSummary snapshot={data.monitoring} scopeType={vendorId ? "vendor" : "all"} scopeKey={vendorId ? (Object.values(data.modelVendors ?? {}).find((vendor) => vendor.name === vendorId || vendor.id === vendorId)?.id ?? vendorId) : "all"} period={selectedPeriod} /></section>
       <main
         className={cn(
           "relative z-10 min-h-[50vh] transition-opacity duration-200",
@@ -1534,7 +1493,7 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
             analysisHref={analysisHref}
           />
         )}
-        {activeTab === "groups" && (total === 0 && !hasGlobalGroupHealthContent ? (
+        {activeTab === "groups" && (total === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
             <div className="mb-4 rounded-full bg-muted/50 p-4">
               <Activity className="h-8 w-8 text-muted-foreground" />
@@ -1600,5 +1559,6 @@ export function DashboardView({ initialData, siteConfig }: DashboardViewProps) {
         )}
       </main>
     </div>
+    </MonitoringDisplayProvider>
   );
 }
