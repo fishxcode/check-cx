@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useState} from "react";
+import Link from "next/link";
 import {ExternalLink, Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {ProviderIcon} from "@/components/provider-icon";
@@ -13,6 +14,7 @@ import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/stat
 import {ClientTime} from "@/components/client-time";
 import {loadConfigState} from "@/lib/utils/admin-config-state";
 import {cn} from "@/lib/utils";
+import {getModelPath} from "@/lib/utils/model-slug";
 
 interface ProviderCardProps {
   timeline: ProviderTimeline;
@@ -160,7 +162,9 @@ export function ProviderCard({
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
                   {PROVIDER_LABEL[latest.type]}
                 </span>
-                <span className="break-all font-mono opacity-60">{latest.model}</span>
+                <Link href={getModelPath(latest.model)} className="break-all font-mono opacity-70 transition-colors hover:text-foreground hover:opacity-100">
+                  {latest.model}
+                </Link>
                 <a
                   href={`https://fishxcode.com/rankings/model/${encodeURIComponent(latest.model)}`}
                   target="_blank"

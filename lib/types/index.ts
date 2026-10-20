@@ -37,6 +37,16 @@ export type {
   HistorySnapshot,
 } from "./dashboard";
 
+// Model detail
+export type {
+  ModelApiEndpoint,
+  ModelDetailData,
+  ModelHistoryItem,
+  ModelGroupRatio,
+  ModelMonitorSource,
+  ModelPricingMetadata,
+} from "./model";
+
 // 配置模板类型
 export type {
   TemplateCategory,
