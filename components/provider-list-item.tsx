@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useState} from "react";
+import Link from "next/link";
 import {Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {AvailabilityStats} from "@/components/availability-stats";
@@ -12,6 +13,7 @@ import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/stat
 import {loadConfigState} from "@/lib/utils/admin-config-state";
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline} from "@/lib/types";
 import {cn} from "@/lib/utils";
+import {getModelPath} from "@/lib/utils/model-slug";
 
 interface ProviderListItemProps {
   timeline: ProviderTimeline;
@@ -115,7 +117,10 @@ export function ProviderListItem({
                 )}
               </div>
               <div className="truncate text-[10px] font-medium text-muted-foreground">
-                {PROVIDER_LABEL[latest.type]} · {latest.model}
+                {PROVIDER_LABEL[latest.type]} ·{" "}
+                <Link href={getModelPath(latest.model)} className="hover:text-foreground hover:underline">
+                  {latest.model}
+                </Link>
               </div>
             </div>
           </div>
