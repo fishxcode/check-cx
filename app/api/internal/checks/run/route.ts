@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
   if (mode === "sync" && ids.length === 0) {
     return NextResponse.json({error: "同步检测必须指定 ids"}, {status: 400});
   }
-  if (mode === "sync" && ids.length > 5) {
-    return NextResponse.json({error: "同步检测最多 5 个配置，请使用队列调度"}, {status: 422});
+  if (mode === "sync" && ids.length > 300) {
+    return NextResponse.json({error: "同步检测最多 300 个配置，请使用队列调度"}, {status: 422});
   }
 
   if (mode === "queue") {
@@ -224,12 +224,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 全量计划由队列执行；防止旧 Token 调用路径重新耗尽单次请求额度。
-    if (configs.length > 5) {
+    if (configs.length > 300) {
       await finishTriggerLog(logId, {
         status: "aborted", durationMs: Date.now() - startedAtMs,
-        configCount: 0, issueCount: 0, message: "同步检测最多 5 个配置，请使用队列调度",
+        configCount: 0, issueCount: 0, message: "同步检测最多 300 个配置，请使用队列调度",
       });
-      return NextResponse.json({error: "同步检测最多 5 个配置，请使用队列调度"}, {status: 422});
+      return NextResponse.json({error: "同步检测最多 300 个配置，请使用队列调度"}, {status: 422});
     }
     const results = await runChecksForConfigs(configs, {strictPersistence: true});
     await runOfficialStatusCheckOnce();
