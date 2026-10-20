@@ -45,7 +45,7 @@ export function resetDashboardCacheMetrics(): void {
   dashboardCacheMetrics.inflightHits = 0;
 }
 
-const DEFAULT_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_DASHBOARD_CACHE_TTL_MS = 30_000;
 const dashboardCache = new Map<string, DashboardCacheEntry>();
 
 export function clearDashboardDataCache(): void {
@@ -62,7 +62,7 @@ function getDashboardCacheKey(
 
 function getDashboardCacheTtlMs(pollIntervalMs: number): number {
   if (Number.isFinite(pollIntervalMs) && pollIntervalMs > 0) {
-    return pollIntervalMs;
+    return Math.min(pollIntervalMs, 30_000);
   }
   return DEFAULT_DASHBOARD_CACHE_TTL_MS;
 }

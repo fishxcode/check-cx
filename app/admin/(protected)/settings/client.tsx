@@ -38,12 +38,19 @@ interface SchedulerToken {
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
   const isSecret = setting.value_type === "secret";
   const isBoolean = setting.value_type === "boolean";
+  const isCheckInterval = setting.key === "check_poll_interval_seconds";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(isSecret ? "" : (setting.value ?? ""));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const intervalSeconds = Number(editing ? draft : setting.value);
+  const validInterval = Number.isInteger(intervalSeconds) && intervalSeconds >= 60 && intervalSeconds <= 3600;
 
   async function save(nextValue: string = draft) {
+    if (isCheckInterval && (!/^[0-9]{1,4}$/.test(nextValue) || Number(nextValue) < 60 || Number(nextValue) > 3600)) {
+      setErr("检测间隔必须为 60～3600 秒的整数");
+      return;
+    }
     setSaving(true);
     setErr("");
     const res = await fetch(`/api/admin/settings/${setting.key}`, {
@@ -67,7 +74,10 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               type={isSecret ? "password" : setting.value_type === "number" ? "number" : "text"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              list={isBoolean ? `${setting.key}-options` : undefined}
+              list={isBoolean || isCheckInterval ? `${setting.key}-options` : undefined}
+              min={isCheckInterval ? 60 : undefined}
+              max={isCheckInterval ? 3600 : undefined}
+              step={isCheckInterval ? 1 : undefined}
               placeholder={isSecret ? "输入新密钥（留空保留原值）" : undefined}
               className="h-7 w-40 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
@@ -77,6 +87,14 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               <datalist id={`${setting.key}-options`}>
                 <option value="true" />
                 <option value="false" />
+              </datalist>
+            )}
+            {isCheckInterval && (
+              <datalist id={`${setting.key}-options`}>
+                <option value="300">5 分钟</option>
+                <option value="900">15 分钟</option>
+                <option value="1800">30 分钟</option>
+                <option value="3600">60 分钟</option>
               </datalist>
             )}
             <button onClick={() => void save()} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
@@ -115,6 +133,12 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               </>
             )}
           </div>
+        )}
+        {isCheckInterval && (
+          <p className="mt-2 max-w-md text-xs text-muted-foreground">
+            间隔为 60～3600 秒，下次调度时生效，无需重启。上一轮未完成时不会叠加。
+            {validInterval && ` 按 200 个配置估算，每日约 ${Math.round(200 * 86400 / intervalSeconds).toLocaleString("zh-CN")} 次检测，不含重试。`}
+          </p>
         )}
       </td>
     </tr>

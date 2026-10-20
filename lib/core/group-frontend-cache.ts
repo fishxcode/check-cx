@@ -90,10 +90,10 @@ export function setGroupCache(
   etag?: string
 ): void {
   const key = getCacheKey(groupName, trendPeriod);
-  const ttlMs =
+  const ttlMs = Math.min(60_000,
     Number.isFinite(data.pollIntervalMs) && data.pollIntervalMs > 0
       ? data.pollIntervalMs
-      : DEFAULT_CACHE_TTL_MS;
+      : DEFAULT_CACHE_TTL_MS);
   cache.set(key, {
     data,
     timestamp: Date.now(),

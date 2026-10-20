@@ -42,7 +42,7 @@ export async function loadSnapshotForScope(
   if (refreshMode === "never") {
     if (
       cacheEntry.history &&
-      now - cacheEntry.lastPingAt < scope.pollIntervalMs
+      now - cacheEntry.lastPingAt < Math.min(scope.pollIntervalMs, 30_000)
     ) {
       return cacheEntry.history;
     }

@@ -1,10 +1,12 @@
 "use client";
 
+import {useVisibleRefresh} from "@/components/use-visible-refresh";
+
 import {getModelPath} from "@/lib/utils/model-slug";
 
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePathname, useRouter, useSearchParams} from "next/navigation";
-import {fetchWithCache, prefetchDashboardData, setCache} from "@/lib/core/frontend-cache";
+import {fetchWithCache, setCache} from "@/lib/core/frontend-cache";
 import {buildVendorGroups, scopeDashboardToVendor, UNKNOWN_VENDOR} from "@/lib/utils/vendor-groups";
 import type {VendorGroup} from "@/lib/utils/vendor-groups";
 import {VendorIcon} from "@/components/vendor-icon";
@@ -788,15 +790,12 @@ export function DashboardView({ initialData, siteConfig, vendorId }: DashboardVi
     }
   }, [initialData]);
 
-  useEffect(() => {
-    const currentPeriod = data.trendPeriod ?? "7d";
-    prefetchDashboardData(["24h", "7d", "15d", "30d"], currentPeriod).catch(() => undefined);
-  }, [data.trendPeriod]);
 
-  // 定时拉取检测运行状态（每 15 秒），用于展示「检测中/上次检测/下次预计」
+  // 定时拉取检测运行状态（每 60 秒），用于展示「检测中/上次检测/下次预计」
   useEffect(() => {
     let active = true;
     const loadPollerStatus = async () => {
+      if (document.visibilityState !== "visible") return;
       try {
         const res = await fetch("/api/poller-status", { cache: "no-store" });
         if (!res.ok) return;
@@ -807,7 +806,7 @@ export function DashboardView({ initialData, siteConfig, vendorId }: DashboardVi
       }
     };
     void loadPollerStatus();
-    const timer = window.setInterval(loadPollerStatus, 15000);
+    const timer = window.setInterval(loadPollerStatus, 60_000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -834,15 +833,7 @@ export function DashboardView({ initialData, siteConfig, vendorId }: DashboardVi
     }
   }, [isCoarsePointer]);
 
-  useEffect(() => {
-    if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      refresh(undefined, false, true).catch(() => undefined);
-    }, data.pollIntervalMs);
-    return () => window.clearInterval(timer);
-  }, [data.pollIntervalMs, refresh]);
+  useVisibleRefresh(() => refresh(undefined, false, true));
 
   useEffect(() => {
     if (selectedPeriod === data.trendPeriod) {
@@ -1389,7 +1380,7 @@ export function DashboardView({ initialData, siteConfig, vendorId }: DashboardVi
               <span className="text-xs font-semibold uppercase tracking-wider">Operational</span>
            </div>
 
-           {/* 定时检测状态（由 /api/poller-status 每 15 秒刷新） */}
+           {/* 定时检测状态（由 /api/poller-status 每 60 秒刷新） */}
            {pollerStatus && (
              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-[10px] font-medium text-muted-foreground">
                {pollerStatus.running ? (

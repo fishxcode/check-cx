@@ -1,7 +1,6 @@
 import "server-only";
 
 import {getConfiguredModelVendors} from "@/lib/core/model-pricing";
-import {getPollingIntervalMs} from "@/lib/core/polling-config";
 import {createAdminClient} from "@/lib/supabase/admin";
 import type {MonitoringSnapshot, MonitoringStatistic} from "@/lib/types/monitoring";
 
@@ -24,7 +23,7 @@ export async function getMonitoringStatistics(): Promise<MonitoringSnapshot> {
   const requestGeneration = generation;
   const request = loadStatistics().catch(() => unavailable()).then((value) => {
     if (generation === requestGeneration) {
-      cached = {value, expiresAt: Date.now() + (value.available ? getPollingIntervalMs() : 15_000)};
+      cached = {value, expiresAt: Date.now() + (value.available ? 30_000 : 15_000)};
     }
     return value;
   }).finally(() => {

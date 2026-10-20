@@ -22,7 +22,7 @@ interface GroupDashboardCacheEntry {
   inflight?: Promise<GroupDashboardData | null>;
 }
 
-const DEFAULT_GROUP_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_GROUP_CACHE_TTL_MS = 30_000;
 const groupDashboardCache = new Map<string, GroupDashboardCacheEntry>();
 
 export function clearGroupDashboardCache(): void {
@@ -40,7 +40,7 @@ function getGroupCacheKey(
 
 function getGroupCacheTtlMs(pollIntervalMs: number): number {
   if (Number.isFinite(pollIntervalMs) && pollIntervalMs > 0) {
-    return pollIntervalMs;
+    return Math.min(pollIntervalMs, 30_000);
   }
   return DEFAULT_GROUP_CACHE_TTL_MS;
 }

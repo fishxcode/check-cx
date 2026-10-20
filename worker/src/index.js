@@ -1,82 +1,77 @@
-/**
- * Check CX 定时检测触发 Worker
- *
- * 由 Cloudflare Cron 每 30 分钟触发，调用 status.fishxcode.com 的检测接口，
- * 让定时检测稳定运行；主站本身不运行常驻后台轮询。
- *
- * 认证：Scheduler Token（在 admin 设置页生成）
- * 行为：触发后始终返回 200（不因检测到 failed 配置而报错），检测结果由接口返回。
- *
- * 触发留痕：每次触发携带 x-cx-trigger 与 x-cx-attempt-id 请求头，
- * 服务端 /api/internal/checks/run 收到后写入 worker_trigger_logs 表，
- * 后台「调度触发」页面可查看记录。
- */
-
+/** Cron 负责计划与补偿；每条 Queue 消息只执行一个持久化任务。 */
 export default {
-  /**
-   * Cron 定时触发入口
-   */
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      triggerChecks(env, "scheduled").then((result) => {
-        console.log(`[check-cx-cron] 定时触发完成`, JSON.stringify(result));
-      })
-    );
+    ctx.waitUntil(dispatch(env, "scheduled").then((result) => {
+      console.log("[check-cx-queue] 调度完成", result);
+    }));
   },
 
-  /**
-   * 手动触发（可通过 curl 测试）
-   * GET / -> 使用 Scheduler Token 触发一次检测
-   */
   async fetch(request, env) {
-    if (request.method !== "GET") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-    const authorization = request.headers.get("authorization") || "";
+    if (request.method !== "GET") return new Response("Method Not Allowed", {status: 405});
     const token = env.SCHEDULER_TOKEN?.trim();
-    if (!token || authorization !== `Bearer ${token}`) {
-      return new Response("Unauthorized", { status: 401 });
+    if (!token || request.headers.get("authorization") !== `Bearer ${token}`) {
+      return new Response("Unauthorized", {status: 401});
     }
-    const result = await triggerChecks(env, "fetch");
-    return new Response(JSON.stringify(result, null, 2), {
-      headers: { "content-type": "application/json" },
-    });
+    try {
+      return Response.json(await dispatch(env, "fetch"));
+    } catch {
+      return Response.json({ok: false, error: "创建检测计划失败"}, {status: 503});
+    }
+  },
+
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      const taskId = message.body?.taskId;
+      if (typeof taskId !== "string" || !/^[0-9a-f-]{36}$/i.test(taskId)) {
+        console.error("[check-cx-queue] 无效任务消息");
+        message.ack();
+        continue;
+      }
+      try {
+        const result = await callApi(env, {action: "execute", taskId});
+        // 先发送已持久化的后续任务，再确认当前消息；发送失败可安全重放。
+        await enqueue(env, result.tasks);
+        if (result.retry) message.retry({delaySeconds: 60});
+        else {
+          if (result.failed) console.error("[check-cx-queue] 任务已失败", {taskId});
+          message.ack();
+        }
+      } catch (error) {
+        console.error("[check-cx-queue] 等待重试", {taskId, error: error instanceof Error ? error.message : "未知错误"});
+        message.retry({delaySeconds: 60});
+      }
+    }
   },
 };
 
-/**
- * 调用检测 API 触发一次检测
- * Cron 事件通过 waitUntil 等待完整 API 请求，避免客户端超时导致检查中断。
- */
-async function triggerChecks(env, eventType) {
+async function dispatch(env, event) {
+  // 数据库统一判断检测周期；手动请求同样不会绕过到期与防重检查。
+  const result = await callApi(env, {action: "dispatch", event});
+  await enqueue(env, result.tasks);
+  return {ok: true, attemptId: result.attemptId, intervalSeconds: result.intervalSeconds, queued: result.tasks.length};
+}
+
+async function callApi(env, body) {
+  const token = env.SCHEDULER_TOKEN?.trim();
+  if (!token) throw new Error("SCHEDULER_TOKEN 未配置");
   const base = env.CHECK_CX_API_BASE || "https://status.fishxcode.com";
-  const token = env.SCHEDULER_TOKEN;
-  if (!token) {
-    return { ok: false, error: "SCHEDULER_TOKEN 未配置" };
-  }
+  const response = await fetch(`${base}/api/internal/checks/queue`, {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(90_000),
+    headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`任务接口返回 HTTP ${response.status}`);
+  const result = await response.json();
+  if (!Array.isArray(result.tasks)) throw new Error("任务接口未返回有效计划");
+  return result;
+}
 
-  const url = `${base}/api/internal/checks/run`;
-  const attemptId = crypto.randomUUID();
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        "X-CX-Trigger": eventType,
-        "X-CX-Attempt-Id": attemptId,
-      },
-      body: JSON.stringify({ failOnIssues: false }),
-    });
-
-    return {
-      ok: response.ok,
-      status: response.status,
-      attemptId,
-      body: await response.text(),
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, attemptId, error: message };
+async function enqueue(env, taskIds) {
+  if (!env.CHECK_QUEUE) throw new Error("CHECK_QUEUE 未绑定");
+  // 每个 sendBatch 最多 100 条，每次调用不会发出 200 个 HTTP 请求。
+  for (let offset = 0; offset < taskIds.length; offset += 100) {
+    await env.CHECK_QUEUE.sendBatch(taskIds.slice(offset, offset + 100).map((taskId) => ({
+      body: {taskId}, contentType: "json",
+    })));
   }
 }

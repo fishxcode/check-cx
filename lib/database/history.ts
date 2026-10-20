@@ -80,7 +80,7 @@ class SnapshotStore {
     return mapRowsToSnapshot(data as RpcHistoryRow[] | null, limitPerConfig);
   }
 
-  async append(results: CheckResult[]): Promise<void> {
+  async append(results: CheckResult[], options: {strict?: boolean} = {}): Promise<void> {
     if (results.length === 0) {
       return;
     }
@@ -109,6 +109,7 @@ class SnapshotStore {
     }
     if (error) {
       logError("写入历史记录失败", error);
+      if (options.strict) throw new Error(`写入历史记录失败：${error.code}`);
       return;
     }
 
