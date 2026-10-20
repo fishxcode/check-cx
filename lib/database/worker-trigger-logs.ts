@@ -70,7 +70,8 @@ export async function finishTriggerLog(
         message: result.message ?? null,
         finished_at: new Date().toISOString(),
       })
-      .eq("id", logId);
+      .eq("id", logId)
+      .eq("status", "running");
     if (error) throw new Error(`回填调度日志失败：${error.code}`);
   } catch (err) {
     logError("回填触发日志失败", err);
