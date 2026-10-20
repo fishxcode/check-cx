@@ -15,15 +15,12 @@ const DATA_CHANGE_CYCLE_SECONDS = 5 * 60;
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("trendPeriod");
-  const forceRefreshParam = searchParams.get("forceRefresh");
-  const shouldForceRefresh =
-    forceRefreshParam === "1" || forceRefreshParam === "true";
   const trendPeriod = VALID_PERIODS.includes(period as AvailabilityPeriod)
     ? (period as AvailabilityPeriod)
     : undefined;
 
   const { data, etag } = await loadDashboardDataWithEtag({
-    refreshMode: shouldForceRefresh ? "always" : "never",
+    refreshMode: "never",
     trendPeriod,
   });
 

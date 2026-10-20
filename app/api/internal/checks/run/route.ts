@@ -2,6 +2,9 @@ import {NextResponse, type NextRequest} from "next/server";
 
 import {createAdminClient} from "@/lib/supabase/admin";
 import {runChecksForConfigs} from "@/lib/core/config-check-execution";
+import {runOfficialStatusCheckOnce} from "@/lib/core/official-status-poller";
+import {ensurePollerLeadership, isPollerLeader, releasePollerLeadership} from "@/lib/core/poller-leadership";
+import {setLastPingStartedAt, setPollerRunning} from "@/lib/core/global-state";
 import {loadProviderConfigsFromDB} from "@/lib/database/config-loader";
 import {
   touchSchedulerToken,
@@ -91,7 +94,44 @@ export async function POST(request: NextRequest) {
   });
 
   const startedAtMs = Date.now();
+  let ownsRunLock = false;
   try {
+    await ensurePollerLeadership();
+    if (!isPollerLeader()) {
+      await finishTriggerLog(logId, {
+        status: "aborted",
+        durationMs: Date.now() - startedAtMs,
+        configCount: null,
+        issueCount: null,
+        message: "当前节点不是 leader，跳过本次触发",
+      });
+      return NextResponse.json({
+        ok: false,
+        skipped: true,
+        reason: "当前节点不是 leader",
+      }, {status: 202});
+    }
+
+    if (globalThis.__checkCxPollerRunning) {
+      await finishTriggerLog(logId, {
+        status: "aborted",
+        durationMs: Date.now() - startedAtMs,
+        configCount: null,
+        issueCount: null,
+        message: "已有检查任务正在执行",
+      });
+      return NextResponse.json({
+        ok: false,
+        skipped: true,
+        reason: "已有检查任务正在执行",
+      }, {status: 202});
+    }
+
+    globalThis.__checkCxPollerRunning = true;
+    setPollerRunning(true);
+    setLastPingStartedAt(startedAtMs);
+    ownsRunLock = true;
+
     const body = await request.json().catch(() => ({} as RunChecksRequestBody));
     const rawIds: unknown[] = Array.isArray(body.ids) ? body.ids : [];
     const ids = rawIds.length > 0
@@ -115,6 +155,7 @@ export async function POST(request: NextRequest) {
     }
 
     const results = await runChecksForConfigs(configs);
+    await runOfficialStatusCheckOnce();
 
     const issueResults = results.filter((result) =>
       ["failed", "validation_failed", "error"].includes(result.status)
@@ -164,5 +205,11 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  } finally {
+    if (ownsRunLock) {
+      await releasePollerLeadership();
+      globalThis.__checkCxPollerRunning = false;
+      setPollerRunning(false);
+    }
   }
 }

@@ -4,9 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
 import { runProviderChecks } from "@/lib/providers";
 import { assertEndpointSafe } from "@/lib/utils/ssrf-guard";
-import * as dns from "dns/promises";
-import * as tls from "tls";
-import { URL } from "url";
+import * as dns from "node:dns/promises";
+import * as tls from "node:tls";
+import { URL } from "node:url";
 
 /**
  * 诊断层级状态
@@ -83,7 +83,17 @@ async function diagnoseDNS(endpoint: string): Promise<DiagnosticLayer> {
   }
 
   try {
-    const addresses = await dns.resolve(parsedUrl.hostname);
+    const [ipv4, ipv6] = await Promise.allSettled([
+      dns.resolve4(parsedUrl.hostname),
+      dns.resolve6(parsedUrl.hostname),
+    ]);
+    const addresses = [
+      ...(ipv4.status === "fulfilled" ? ipv4.value : []),
+      ...(ipv6.status === "fulfilled" ? ipv6.value : []),
+    ];
+    if (addresses.length === 0) {
+      throw new Error("DNS 未解析到任何地址");
+    }
     const durationMs = Date.now() - startTime;
 
     return {
@@ -96,7 +106,7 @@ async function diagnoseDNS(endpoint: string): Promise<DiagnosticLayer> {
       details: {
         hostname: parsedUrl.hostname,
         addresses,
-        recordType: "A",
+        recordType: "A/AAAA",
       },
     };
   } catch (error) {

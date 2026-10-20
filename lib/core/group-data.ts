@@ -9,7 +9,6 @@ import {loadProviderConfigsFromDB} from "../database/config-loader";
 import {getGroupInfo} from "../database/group-info";
 import {getAvailabilityStats} from "../database/availability";
 import {getPollingIntervalLabel, getPollingIntervalMs} from "./polling-config";
-import {ensureOfficialStatusPoller} from "./official-status-poller";
 import {buildProviderTimelines, loadSnapshotForScope} from "./health-snapshot-service";
 import type {AvailabilityPeriod, AvailabilityStatsMap, ProviderTimeline, RefreshMode} from "../types";
 import {UNGROUPED_DISPLAY_NAME, UNGROUPED_KEY} from "../types";
@@ -97,8 +96,6 @@ export async function loadGroupDashboardData(
   targetGroupName: string,
   options?: { refreshMode?: RefreshMode; trendPeriod?: AvailabilityPeriod }
 ): Promise<GroupDashboardData | null> {
-  ensureOfficialStatusPoller();
-
   const allConfigs = await loadProviderConfigsFromDB();
 
   // 筛选指定分组的配置
@@ -124,7 +121,7 @@ export async function loadGroupDashboardData(
   const providerKey =
     allowedIds.size > 0 ? [...allowedIds].sort().join("|") : "__empty__";
   const cacheKey = `group:${targetGroupName}:${pollIntervalMs}:${providerKey}`;
-  const refreshMode = options?.refreshMode ?? "missing";
+  const refreshMode = options?.refreshMode ?? "never";
   const trendPeriod = options?.trendPeriod ?? "7d";
   const cacheKeyWithPeriod = getGroupCacheKey(
     targetGroupName,

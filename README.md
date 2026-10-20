@@ -1,7 +1,6 @@
 # Check CX
 
-Check CX 是一个用于监控 AI 模型 API 可用性与延迟的健康面板。项目基于 Next.js App Router 与 Supabase，通过后台轮询持续采集健康结果，并提供可视化
-Dashboard 与只读状态 API，适合团队内部状态墙、供应商 SLA 监控与多模型对比。
+Check CX 是一个基于 vinext、Cloudflare Workers 与 Supabase 的 AI 模型 API 可用性与延迟监控面板。健康检查由受 Scheduler Token 保护的外部触发 API 按需执行，并提供可视化 Dashboard 与只读状态 API。
 
 ![Check CX Dashboard](docs/images/index.png)
 
@@ -11,17 +10,18 @@ Dashboard 与只读状态 API，适合团队内部状态墙、供应商 SLA 监�
 - 实时延迟、Ping 延迟与历史时间线，支持 7/15/30 天可用性统计
 - 分组视图与分组详情页（`group_name` + `group_info`），支持分组标签与官网链接
 - 维护模式与系统通知横幅（支持 Markdown，多条轮播）
-- 官方状态轮询（当前支持 OpenAI 与 Anthropic）
-- 多节点部署自动选主（数据库租约保证单节点执行轮询）
+- 官方状态检查（当前支持 OpenAI 与 Anthropic）
+- 多节点部署自动选主（数据库租约避免并发触发重复执行）
 - 安全默认：模型密钥仅保存在数据库，服务端使用 service role key 读取
 
 ## 快速开始
 
 ### 1. 环境准备
 
-- Node.js 18 及以上（建议 20 LTS）
+- Node.js 22.12 及以上（用于本地 Vite/vinext 工具链）
 - pnpm 10
 - Supabase 项目（PostgreSQL）
+- Cloudflare Workers 项目与 Wrangler 登录状态
 
 ### 2. 安装依赖
 
@@ -76,13 +76,39 @@ pnpm dev
 ## 运行与部署
 
 ```bash
-pnpm dev    # 本地开发
-pnpm build  # 生产构建
-pnpm start  # 生产运行
-pnpm lint   # 代码检查
+pnpm dev       # 本地 Vite/vinext 开发
+pnpm preview   # Wrangler 本地 Worker 预览
+pnpm run deploy # 构建并部署到 Cloudflare Workers
+pnpm check     # vinext 兼容性检查
+pnpm lint      # 代码检查
 ```
 
-部署时将 `.env.local` 中的变量注入到部署平台（Vercel、容器或自建服务器）。
+Cloudflare 部署前，将运行时配置写入 Wrangler secrets/vars。主站不再使用 Next standalone、Docker 或 Vercel 部署。
+
+```bash
+wrangler secret put SUPABASE_URL
+wrangler secret put SUPABASE_PUBLISHABLE_OR_ANON_KEY
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+wrangler secret put CRON_SECRET
+wrangler secret put INTERNAL_METRICS_TOKEN
+
+# Cron trigger Worker 的调用密钥（在 worker 配置目录下执行）
+cd worker
+wrangler secret put SCHEDULER_TOKEN
+```
+
+GitHub Actions 会在主站发布后同步发布 `worker/` 下的 Cron trigger Worker；首次部署前仍需手动写入该 Worker 的 `SCHEDULER_TOKEN` Secret。
+
+外部调度器通过 `POST /api/internal/checks/run` 触发检测，使用 Scheduler Token：
+
+```bash
+curl -X POST https://<your-worker-domain>/api/internal/checks/run \
+  -H "Authorization: Bearer <scheduler-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"failOnIssues":false}'
+```
+
+主站 Worker 不维持常驻轮询器；检测和官方状态刷新均由该受保护 API 按需执行。
 
 ## 配置说明
 

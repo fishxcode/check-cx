@@ -4,32 +4,31 @@
 
 import "server-only";
 
-import {ensurePollerLeaseRow, tryAcquirePollerLease, tryRenewPollerLease} from "../database/poller-lease";
+import {ensurePollerLeaseRow, releasePollerLease, tryAcquirePollerLease, tryRenewPollerLease} from "../database/poller-lease";
 import {logError} from "../utils";
-import {getPollerLeaderTimer, getPollerRole, setPollerLeaderTimer, setPollerRole, type PollerRole,} from "./global-state";
+import {getPollerRole, setPollerRole, type PollerRole} from "./global-state";
 
 // 固定租约参数，不暴露环境变量
-const LEASE_DURATION_MS = 120_000;
-const LEASE_RENEW_INTERVAL_MS = 30_000;
+// 覆盖 Cloudflare Worker 单次请求的最大执行窗口，避免长任务中租约过期。
+const LEASE_DURATION_MS = 10 * 60_000;
 const DEFAULT_NODE_ID = "local";
 
 let didWarnMissingNodeId = false;
 let initPromise: Promise<void> | null = null;
 
 function resolveNodeId(): string {
-  const raw = process.env.CHECK_NODE_ID?.trim();
-  if (raw) {
-    return raw;
-  }
-
-  const fallback = process.env.HOSTNAME?.trim() || DEFAULT_NODE_ID;
+  const base =
+    process.env.CHECK_NODE_ID?.trim() ||
+    process.env.HOSTNAME?.trim() ||
+    DEFAULT_NODE_ID;
+  const nodeId = `${base}:${globalThis.crypto.randomUUID()}`;
   if (!didWarnMissingNodeId) {
     console.warn(
-      `[check-cx] 未设置 CHECK_NODE_ID，使用 ${fallback} 作为节点身份`
+      `[check-cx] 使用 ${nodeId} 作为本次 Worker isolate 的节点身份`
     );
     didWarnMissingNodeId = true;
   }
-  return fallback;
+  return nodeId;
 }
 
 const NODE_ID = resolveNodeId();
@@ -52,10 +51,10 @@ async function refreshLeadership(): Promise<void> {
 
   if (currentRole === "leader") {
     const renewed = await tryRenewPollerLease(NODE_ID, now, expiresAt);
-    if (!renewed) {
-      setRole("standby");
+    if (renewed) {
+      return;
     }
-    return;
+    setRole("standby");
   }
 
   const acquired = await tryAcquirePollerLease(NODE_ID, now, expiresAt);
@@ -65,9 +64,6 @@ async function refreshLeadership(): Promise<void> {
 }
 
 export async function ensurePollerLeadership(): Promise<void> {
-  if (getPollerLeaderTimer()) {
-    return initPromise ?? Promise.resolve();
-  }
   if (initPromise) {
     return initPromise;
   }
@@ -75,19 +71,31 @@ export async function ensurePollerLeadership(): Promise<void> {
   initPromise = (async () => {
     await ensurePollerLeaseRow();
     await refreshLeadership();
-    const timer = setInterval(() => {
-      refreshLeadership().catch((error) => {
-        logError("pollerLeadership.refresh", error);
-      });
-    }, LEASE_RENEW_INTERVAL_MS);
-    setPollerLeaderTimer(timer);
-  })();
+  })().catch((error) => {
+    logError("pollerLeadership.refresh", error);
+    throw error;
+  });
 
-  return initPromise;
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
 }
 
 export function isPollerLeader(): boolean {
   return getPollerRole() === "leader";
+}
+
+export async function releasePollerLeadership(): Promise<boolean> {
+  if (!isPollerLeader()) {
+    return true;
+  }
+  const released = await releasePollerLease(NODE_ID);
+  if (released) {
+    setRole("standby");
+  }
+  return released;
 }
 
 export function getPollerNodeId(): string {

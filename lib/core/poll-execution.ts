@@ -6,7 +6,7 @@
 import {loadProviderConfigsFromDB} from "../database/config-loader";
 import {isConfigPaused, isConfigDue, updateNextCheckAt} from "../database/config-scheduler";
 import {getLastPingStartedAt, setLastPingStartedAt, setPollerRunning} from "./global-state";
-import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
+import {ensurePollerLeadership, isPollerLeader, releasePollerLeadership} from "./poller-leadership";
 import {getPollingIntervalMs} from "./polling-config";
 import {refreshSiteSettings} from "./site-settings";
 import type {CheckResult, HealthStatus} from "../types";
@@ -210,6 +210,9 @@ export async function runPollExecution(
     console.error("[check-cx] 执行检测失败", error);
     return buildSkippedResult(source, "执行检测失败", startedAtMs);
   } finally {
+    if (!options.skipLeadership) {
+      await releasePollerLeadership();
+    }
     globalThis.__checkCxPollerRunning = false;
     setPollerRunning(false);
   }

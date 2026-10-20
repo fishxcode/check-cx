@@ -1,6 +1,6 @@
 import "server-only";
 
-import {createHash, randomBytes} from "crypto";
+import {createHash, randomBytes} from "node:crypto";
 
 import {createAdminClient} from "@/lib/supabase/admin";
 import {logError} from "@/lib/utils";

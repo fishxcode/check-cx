@@ -1,5 +1,5 @@
 import "server-only";
-import * as dns from "dns/promises";
+import * as dns from "node:dns/promises";
 
 /**
  * SSRF 防护：校验目标主机解析出的 IP 是否落在受限网段。

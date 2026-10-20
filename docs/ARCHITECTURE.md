@@ -6,14 +6,14 @@
 
 Check CX 由三部分组成：
 
-1. **Next.js App Router**：提供 Dashboard 页面与 API 路由。
-2. **后台轮询器**：定时执行健康检查，写入 Supabase。
+1. **vinext App Router**：在 Cloudflare Worker 上提供 Dashboard 页面与 API 路由。
+2. **外部触发器**：Cloudflare Cron Worker 或其他调度系统调用受保护的检查 API。
 3. **Supabase 数据层**：存储配置、历史与统计视图。
 
 核心数据流：
 
 ```
-check_configs → 轮询器 → check_history → 聚合快照 → API / 页面渲染
+check_configs → 外部触发 API → check_history → 聚合快照 → API / 页面渲染
 ```
 
 ## 2. 运行时组件
@@ -25,10 +25,10 @@ check_configs → 轮询器 → check_history → 聚合快照 → API / 页面�
   - `app/api/group/[groupName]/route.ts`：分组数据 API。
   - `app/api/v1/status/route.ts`：对外只读状态 API。
 
-- **后台轮询器**
-  - `lib/core/poller.ts`：定时执行检查与写入。
-  - `lib/core/poller-leadership.ts`：通过数据库租约选主，保证多节点仅一台执行轮询。
-  - `lib/core/official-status-poller.ts`：轮询官方状态并缓存。
+- **检查触发**
+  - `app/api/internal/checks/run/route.ts`：受 Scheduler Token 保护的外部触发入口。
+  - `lib/core/poller-leadership.ts`：每次触发时通过数据库租约选主，避免并发执行。
+  - `lib/core/official-status-poller.ts`：在一次触发中刷新官方状态并缓存。
 
 - **Supabase**
   - 表：`check_configs`、`check_history`、`group_info`、`system_notifications`、`check_poller_leases`。
@@ -86,11 +86,24 @@ check_configs → 轮询器 → check_history → 聚合快照 → API / 页面�
 
 ## 7. 多节点与选主
 
-- 所有节点都启动轮询器逻辑，但只有持有租约的节点执行实际检查与写入。
-- 选主与续租由 `check_poller_leases` 表驱动，节点身份来自 `CHECK_NODE_ID`。
-- Standby 节点只读取历史数据，避免重复写入。
+- Worker 不启动常驻轮询器；每次外部调用检查 API 时尝试获取或续租。
+- 选主由 `check_poller_leases` 表驱动，节点身份来自 `CHECK_NODE_ID`。
+- 未持有租约的调用不重复写入检查结果。
 
-## 8. 关键约束
+## 8. 外部触发 API
+
+`POST /api/internal/checks/run` 是健康检查的执行入口。调用方必须携带已生成的 Scheduler Token：
+
+```bash
+curl -X POST https://status.fishxcode.com/api/internal/checks/run \
+  -H "Authorization: Bearer <scheduler-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"failOnIssues":false}'
+```
+
+Cloudflare Cron Worker、Uptime Kuma 或其他 API 调度器都可以复用此入口；主站运行时不会自行创建后台定时器。
+
+## 9. 关键约束
 
 - `enabled = false` 的配置不会被轮询器读取。
 - `is_maintenance = true` 会保留卡片并返回 `maintenance` 状态，但不执行实际检查。

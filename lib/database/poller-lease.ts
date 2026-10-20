@@ -80,3 +80,24 @@ export async function tryRenewPollerLease(
 
   return Array.isArray(data) && data.length > 0;
 }
+
+export async function releasePollerLease(nodeId: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const {data, error} = await supabase
+    .from(LEASE_TABLE)
+    .update({
+      leader_id: null,
+      lease_expires_at: INITIAL_LEASE_EXPIRES_AT,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("lease_key", LEASE_KEY)
+    .eq("leader_id", nodeId)
+    .select("lease_key");
+
+  if (error) {
+    logError("释放轮询租约失败", error);
+    return false;
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}

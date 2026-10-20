@@ -18,18 +18,13 @@ interface RateLimitRule {
 
 const store = new Map<string, WindowEntry>();
 
-// 每 5 分钟清理一次过期条目，防止内存泄漏
-setInterval(
-  () => {
-    const now = Date.now();
-    for (const [key, entry] of store) {
-      if (now - entry.windowStart > 120_000) {
-        store.delete(key);
-      }
+function pruneExpiredEntries(now: number): void {
+  for (const [key, entry] of store) {
+    if (now - entry.windowStart > 120_000) {
+      store.delete(key);
     }
-  },
-  5 * 60 * 1000
-);
+  }
+}
 
 /**
  * 检查并记录请求，返回限速结果
@@ -44,8 +39,10 @@ export function checkRateLimit(
   route: string,
   rule: RateLimitRule
 ): { allowed: boolean; remaining: number; resetMs: number } {
-  const key = `${route}:${ip}`;
   const now = Date.now();
+  pruneExpiredEntries(now);
+
+  const key = `${route}:${ip}`;
   const entry = store.get(key);
 
   if (!entry || now - entry.windowStart >= rule.windowMs) {

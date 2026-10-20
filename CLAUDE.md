@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Check CX 是一个基于 Next.js 的 AI 模型健康监控面板，用于实时监控 OpenAI、Gemini、Anthropic 等 AI 模型的 API 可用性、延迟和错误信息。项目采用分层架构，通过后台轮询持续采集健康结果，并提供可视化 Dashboard 与只读状态 API，适合团队内部状态墙、供应商 SLA 监控与多模型对比。
+Check CX 是一个基于 vinext 和 Cloudflare Workers 的 AI 模型健康监控面板，用于监控 OpenAI、Gemini、Anthropic 等 AI 模型的 API 可用性、延迟和错误信息。项目由受 Scheduler Token 保护的外部触发 API 按需采集健康结果，并提供可视化 Dashboard 与只读状态 API。
 
 ## 核心特性
 
@@ -103,7 +103,7 @@ lib/
 │   └── error-handler.ts # 统一错误处理
 ├── core/               # 核心模块
 │   ├── global-state.ts # 全局状态管理
-│   ├── poller.ts      # 后台轮询器
+│   ├── poll-execution.ts # 单次检查执行
 │   ├── dashboard-data.ts # Dashboard 数据聚合
 │   ├── status.ts      # 状态元数据
 │   └── polling-config.ts # 轮询配置
@@ -113,16 +113,16 @@ lib/
     └── middleware.ts  # 会话中间件
 ```
 
-### 后台轮询系统
+### 外部触发检查系统
 
-项目核心是一个服务器端轮询系统，在应用启动时自动初始化并持续运行:
+项目核心是一个由外部调度器触发的服务端检查系统，Cloudflare Worker 本身不启动常驻后台轮询:
 
-- **入口**: `lib/core/poller.ts` 在模块加载时立即启动轮询
-- **触发**: 使用 `setInterval` 按 `CHECK_POLL_INTERVAL_SECONDS` 间隔执行检测（默认 60 秒，支持 15-600 秒）
-- **全局状态**: 通过 `lib/core/global-state.ts` 统一管理轮询定时器和运行状态，防止 Next.js 热重载时重复创建定时器
+- **入口**: `app/api/internal/checks/run/route.ts` 接受带 Scheduler Token 的 POST 请求
+- **触发**: Cloudflare Cron Worker 或其他 API 调度器调用检查入口
+- **全局状态**: `lib/core/global-state.ts` 只管理单次检查状态、租约角色和缓存
 - **并发控制**: 使用 `__checkCxPollerRunning` 标志位防止多个检测任务重叠执行
-- **选主机制**: `lib/core/poller-leadership.ts` 通过数据库租约选主，保证多节点部署时仅单节点执行轮询
-- **官方状态轮询**: `lib/core/official-status-poller.ts` 定时抓取 OpenAI 和 Anthropic 官方状态
+- **选主机制**: `lib/core/poller-leadership.ts` 通过数据库租约选主，保证并发触发时仅单次执行检查
+- **官方状态检查**: `lib/core/official-status-poller.ts` 在一次外部触发中抓取 OpenAI 和 Anthropic 官方状态
 
 ### 配置管理
 
@@ -257,7 +257,7 @@ check_poller_leases (
 
 ### 数据流向
 
-- **后台 → 数据库**: `lib/core/poller.ts` → `lib/providers/` → `lib/database/history.ts` → Supabase
+- **外部触发 API → 数据库**: `app/api/internal/checks/run/route.ts` → `lib/providers/` → `lib/database/history.ts` → Supabase
 - **数据库 → 前端**: Supabase → `lib/core/dashboard-data.ts` → `app/page.tsx` → `components/dashboard-view.tsx`
 - **实时刷新**: 前端定时器 → `/api/dashboard` → `lib/core/dashboard-data.ts`
 
@@ -462,14 +462,13 @@ INSERT INTO system_notifications (message, level, start_time, end_time)
 VALUES ('**系统维护通知**：今晚 22:00-24:00 进行系统维护，可能影响服务可用性。', 'warning', NOW(), NOW() + INTERVAL '2 days');
 ```
 
-## 调试轮询器
+## 调试检查任务
 
-轮询器在每次执行时会输出详细日志:
+外部调度器调用检查 API 时会输出详细日志:
 
 - 检测开始/结束时间
 - 每个配置的检测结果、延迟、状态
 - 历史记录写入结果
-- 下次预计执行时间
 
 查看服务器日志:
 

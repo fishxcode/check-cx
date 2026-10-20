@@ -5,17 +5,15 @@
 ## 模块职责
 
 核心业务逻辑层，负责协调整个系统的运行：
-- 后台轮询器：自动化健康检查调度
+- 外部触发：协调按需健康检查
 - 数据聚合：Dashboard 和分组数据的统一加载
 - 告警引擎：规则评估与通知分发
-- 全局状态：轮询器状态与缓存管理
-- 官方状态：OpenAI/Anthropic 官方状态轮询
+- 全局状态：单次检查状态与缓存管理
+- 官方状态：OpenAI/Anthropic 官方状态检查
 
 ## 入口与启动
 
-### 自动启动入口
-- `poller.ts` - 模块加载时自动初始化轮询器，使用递归 setTimeout 实现动态间隔调度
-- `official-status-poller.ts` - 由 poller.ts 启动，独立轮询官方状态 API
+主站 Worker 不自动启动后台任务。`app/api/internal/checks/run/route.ts` 接收 Scheduler Token 请求并执行一次检查；官方状态检查也由该请求触发。
 
 ### 数据加载入口
 - `dashboard-data.ts:loadDashboardData()` - Dashboard 数据聚合入口
@@ -24,11 +22,11 @@
 
 ## 对外接口
 
-### 轮询控制
+### 外部检查触发
 ```typescript
-// poller.ts
-async function tick(): Promise<void>
-// 执行一次完整的轮询检查：加载配置 → 执行检查 → 写入历史 → 评估告警
+// app/api/internal/checks/run/route.ts
+POST /api/internal/checks/run
+// 通过 Scheduler Token 鉴权后执行检查并写入历史
 ```
 
 ### 数据聚合
@@ -60,8 +58,6 @@ export async function evaluateAlerts(
 ### 全局状态
 ```typescript
 // global-state.ts
-export function getPollerTimer(): ReturnType<typeof setInterval> | null
-export function setPollerTimer(timer: ReturnType<typeof setInterval>): void
 export function getLastPingStartedAt(): number | null
 export function setLastPingStartedAt(timestamp: number): void
 ```
@@ -76,11 +72,11 @@ export function setLastPingStartedAt(timestamp: number): void
 
 ### 外部依赖
 - `@supabase/supabase-js` - 数据库操作
-- `ai` (Vercel AI SDK) - 间接依赖（通过 providers）
+- `ai` - 间接依赖（通过 providers）
 
 ### 环境变量
-- `CHECK_POLL_INTERVAL_SECONDS` - 轮询间隔（15-600 秒，默认 60）
-- `CHECK_NODE_ID` - 节点标识，用于多节点选主（默认 "local"）
+- `CHECK_POLL_INTERVAL_SECONDS` - 检查决策间隔（15-600 秒，默认 60）
+- `CHECK_NODE_ID` - 触发节点标识，用于多节点选主（默认 "local"）
 - `CHECK_CONCURRENCY` - 并发检查数（默认 5）
 
 ## 数据模型
@@ -130,11 +126,11 @@ interface ProviderTimeline {
 
 ## 常见问题 (FAQ)
 
-### Q: 轮询器如何避免重复执行？
-A: 使用全局标志位 `globalThis.__checkCxPollerRunning` 防止重叠执行，配合 `poller-leadership.ts` 的数据库租约实现多节点选主。
+### Q: 外部触发如何避免重复执行？
+A: 使用全局运行标志和 `poller-leadership.ts` 的数据库租约，避免并发触发重复写入。
 
-### Q: 如何调整轮询间隔？
-A: 设置环境变量 `CHECK_POLL_INTERVAL_SECONDS`（15-600 秒），轮询器使用递归 setTimeout 动态读取配置。
+### Q: 如何调整检查间隔？
+A: 设置环境变量 `CHECK_POLL_INTERVAL_SECONDS`（15-600 秒），外部调度器按该决策间隔调用检查 API。
 
 ### Q: Dashboard 数据如何缓存？
 A: 三层缓存：
@@ -148,12 +144,12 @@ A: 规则支持 `cooldown_seconds` 冷却时间，在冷却期内相同规则+�
 ## 相关文件清单
 
 ### 核心文件
-- `poller.ts` - 后台轮询器主逻辑
+- `poll-execution.ts` - 单次检查执行与租约选主
 - `dashboard-data.ts` - Dashboard 数据聚合
 - `group-data.ts` - 分组数据聚合
 - `alert-engine.ts` - 告警引擎
 - `health-snapshot-service.ts` - 历史快照服务
-- `official-status-poller.ts` - 官方状态轮询器
+- `official-status-poller.ts` - 单次官方状态检查与缓存
 
 ### 配置与状态
 - `polling-config.ts` - 轮询配置读取

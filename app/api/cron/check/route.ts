@@ -14,16 +14,13 @@ function isAuthorized(request: Request): boolean {
   const bearerToken = authorization?.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length).trim()
     : null;
+  const headerToken = request.headers.get("x-cron-secret")?.trim();
 
   if (cronSecret) {
-    return bearerToken === cronSecret;
+    return bearerToken === cronSecret || headerToken === cronSecret;
   }
 
-  return Boolean(
-    request.headers.get("x-vercel-cron") ||
-      request.headers.get("x-cron-secret") ||
-      request.headers.get("user-agent")?.startsWith("vercel-cron/")
-  );
+  return false;
 }
 
 export async function GET(request: Request) {
@@ -48,7 +45,7 @@ export async function GET(request: Request) {
 
   const result = await runPollExecution({
     forceRefreshConfigs: true,
-    skipLeadership: true,
+    skipLeadership: false,
     source: "cron",
   });
 

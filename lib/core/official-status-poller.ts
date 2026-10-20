@@ -5,7 +5,6 @@
 
 import type {OfficialStatusResult, ProviderType} from "../types";
 import {checkAllOfficialStatuses} from "../official-status";
-import {getOfficialStatusIntervalMs} from "./polling-config";
 import {logError} from "../utils/error-handler";
 import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
 
@@ -15,29 +14,14 @@ declare global {
   var __CHECK_CX_OFFICIAL_STATUS_CACHE__:
     | Map<ProviderType, OfficialStatusResult>
     | undefined;
-  // 官方状态轮询器定时器实例
-  var __checkCxOfficialStatusTimer: NodeJS.Timeout | undefined;
   // 标记当前是否已有轮询检查在进行，避免并发
   var __checkCxOfficialStatusPolling: boolean | undefined;
 }
-
 function getOfficialStatusCache(): Map<ProviderType, OfficialStatusResult> {
   if (!globalThis.__CHECK_CX_OFFICIAL_STATUS_CACHE__) {
     globalThis.__CHECK_CX_OFFICIAL_STATUS_CACHE__ = new Map();
   }
   return globalThis.__CHECK_CX_OFFICIAL_STATUS_CACHE__;
-}
-
-function getOfficialStatusTimer(): NodeJS.Timeout | null {
-  return globalThis.__checkCxOfficialStatusTimer ?? null;
-}
-
-function setOfficialStatusTimer(timer: NodeJS.Timeout | null): void {
-  if (timer) {
-    globalThis.__checkCxOfficialStatusTimer = timer;
-  } else {
-    globalThis.__checkCxOfficialStatusTimer = undefined;
-  }
 }
 
 function isOfficialStatusPolling(): boolean {
@@ -79,7 +63,7 @@ export function getAllOfficialStatuses(): Map<
  * 执行一次官方状态检查
  * 更新所有 Provider 的官方状态缓存
  */
-async function runOfficialStatusCheck(): Promise<void> {
+export async function runOfficialStatusCheckOnce(): Promise<void> {
   try {
     await ensurePollerLeadership();
   } catch (error) {
@@ -123,61 +107,5 @@ async function runOfficialStatusCheck(): Promise<void> {
     console.error("[官方状态] 检查失败:", error);
   } finally {
     setOfficialStatusPolling(false);
-  }
-}
-
-/**
- * 启动官方状态轮询器
- * 在模块加载时自动调用,不对外暴露
- */
-export function startOfficialStatusPoller(): void {
-  if (getOfficialStatusTimer() !== null) {
-    console.log("[官方状态] 轮询器已在运行,跳过启动");
-    return;
-  }
-
-  ensurePollerLeadership().catch((error) => {
-    logError("startOfficialStatusPoller.leadership", error);
-  });
-  const intervalMs = getOfficialStatusIntervalMs();
-  console.log(
-    `[官方状态] 启动轮询器,间隔 ${intervalMs / 1000} 秒...`
-  );
-
-  // 立即执行一次检查
-  runOfficialStatusCheck().catch((error) => {
-    logError("startOfficialStatusPoller.initial", error);
-  });
-
-  // 设置定时器
-  const timer = setInterval(() => {
-    runOfficialStatusCheck().catch((error) => {
-      logError("startOfficialStatusPoller.interval", error);
-    });
-  }, intervalMs);
-  setOfficialStatusTimer(timer);
-}
-
-/**
- * 停止官方状态轮询器(用于测试或清理)
- */
-export function stopOfficialStatusPoller(): void {
-  const timer = getOfficialStatusTimer();
-  if (!timer) {
-    return;
-  }
-  clearInterval(timer);
-  setOfficialStatusTimer(null);
-  setOfficialStatusPolling(false);
-  console.log("[官方状态] 轮询器已停止");
-}
-
-/**
- * 确保官方状态轮询器已启动
- * - API Route 等场景可能未引入 RootLayout, 需要在用到官方状态前确保轮询器运行
- */
-export function ensureOfficialStatusPoller(): void {
-  if (getOfficialStatusTimer() === null) {
-    startOfficialStatusPoller();
   }
 }

@@ -16,12 +16,12 @@
 - `SUPABASE_PUBLISHABLE_OR_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-其中 `SUPABASE_SERVICE_ROLE_KEY` 用于后台轮询、配置加载和租约续租，必须配置在服务端环境中，禁止暴露到客户端。
+其中 `SUPABASE_SERVICE_ROLE_KEY` 用于配置加载、检查执行和租约续租，必须配置在服务端环境中，禁止暴露到客户端。
 
 ### 可选（运行参数）
 
-- `CHECK_NODE_ID`：节点标识（多节点部署必须唯一）
-- `CHECK_POLL_INTERVAL_SECONDS`：检测间隔（15–600 秒）
+- `CHECK_NODE_ID`：触发节点标识（多节点部署必须唯一）
+- `CHECK_POLL_INTERVAL_SECONDS`：检查决策间隔（15–600 秒）
 - `CHECK_CONCURRENCY`：并发数（1–20）
 - `OFFICIAL_STATUS_CHECK_INTERVAL_SECONDS`：官方状态轮询间隔（60–3600 秒）
 - `HISTORY_RETENTION_DAYS`：历史保留天数（7–365）
@@ -50,14 +50,22 @@
 
 ## 4. 部署模式
 
-### 4.1 单节点
+### 4.1 主站 Worker
 
-- 默认行为：该节点执行轮询并写入历史。
+- 主站部署为 Cloudflare Worker，提供页面和 API，不运行常驻定时器。
+- 使用 `pnpm deploy` 发布；运行时环境变量和 Secrets 通过 Wrangler 配置。
 
-### 4.2 多节点
+### 4.2 外部触发器
+
+- Cloudflare Cron Worker 或其他调度系统调用 `POST /api/internal/checks/run`。
+- 请求使用 `Authorization: Bearer <Scheduler Token>` 鉴权。
+- 调用方可传 `{"ids":[...]}` 只检查指定配置，或省略 `ids` 检查全部启用配置。
+- 仓库内 Cron Worker 的公开手动 GET 入口同样要求 Scheduler Token；Cron 事件不经过该公开入口。
+
+### 4.3 多节点
 
 - 使用 `check_poller_leases` 表进行租约选主。
-- 只有 leader 节点执行轮询；standby 节点仅提供读取 API。
+- 多个触发请求可能同时到达，但只有持有租约的请求执行检查；其他请求不重复写入。
 - 必须为每个节点设置唯一 `CHECK_NODE_ID`，避免租约冲突。
 
 ## 5. 运维操作
@@ -105,7 +113,6 @@ SELECT prune_check_history(30);
 
 关键日志（服务端）：
 
-- `[check-cx] 初始化后台轮询器...`
 - `[check-cx] 节点角色切换：standby -> leader ...`
 - `[check-cx] 本轮检测明细：...`
 - `[官方状态] openai: operational - ...`
@@ -121,9 +128,9 @@ SELECT prune_check_history(30);
 
 ### 7.2 时间线一直为空
 
-- 查看轮询器日志是否运行。
+- 确认外部调度器是否成功调用检查 API。
 - 检查 `check_history` 是否有新增记录。
-- 确认 `CHECK_POLL_INTERVAL_SECONDS` 未设置过大。
+- 检查 Scheduler Token 和 Supabase 服务端凭据是否有效。
 
 ### 7.3 官方状态显示 unknown
 

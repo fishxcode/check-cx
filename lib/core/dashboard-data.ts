@@ -10,7 +10,6 @@ import {loadProviderConfigsFromDB} from "../database/config-loader";
 import {loadGroupInfos} from "../database/group-info";
 import {getAvailabilityStats} from "../database/availability";
 import {getPollingIntervalLabel, getPollingIntervalMs} from "./polling-config";
-import {ensureOfficialStatusPoller} from "./official-status-poller";
 import {buildProviderTimelines, loadSnapshotForScope} from "./health-snapshot-service";
 import {loadGlobalGroupHealth} from "./global-group-health";
 import type {AvailabilityPeriod, DashboardData, GroupInfoSummary, RefreshMode,} from "../types";
@@ -113,7 +112,6 @@ async function loadDashboardDataInternal(options?: {
   refreshMode?: RefreshMode;
   trendPeriod?: AvailabilityPeriod;
 }): Promise<DashboardLoadResult> {
-  ensureOfficialStatusPoller();
   const allConfigs = await loadProviderConfigsFromDB();
   const maintenanceConfigs = allConfigs.filter((cfg) => cfg.is_maintenance);
   const activeConfigs = allConfigs.filter((cfg) => !cfg.is_maintenance);
@@ -123,7 +121,7 @@ async function loadDashboardDataInternal(options?: {
   const pollIntervalLabel = getPollingIntervalLabel();
   const providerKey =
     allowedIds.size > 0 ? [...allowedIds].sort().join("|") : "__empty__";
-  const refreshMode = options?.refreshMode ?? "missing";
+  const refreshMode = options?.refreshMode ?? "never";
   const trendPeriod = options?.trendPeriod ?? "7d";
   const cacheKey = `dashboard:${pollIntervalMs}:${providerKey}`;
   const cacheKeyWithPeriod = getDashboardCacheKey(
