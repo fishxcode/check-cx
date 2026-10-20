@@ -1,3 +1,4 @@
+import {withPublicResponseCache} from "@/lib/core/public-response-cache";
 import { NextResponse } from "next/server";
 import { getAllSiteSettings } from "@/lib/core/site-settings";
 
@@ -14,7 +15,7 @@ function buildEtag(payload: unknown): string {
  * 公开端点：获取所有前台可用的站点配置
  * 用于前端动态读取 title、description、logo_url 等
  */
-export async function GET() {
+async function loadPublicResponse() {
   try {
     const settings = await getAllSiteSettings();
 
@@ -67,4 +68,8 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: Request) {
+  return withPublicResponseCache(request, "site-config", loadPublicResponse, 30);
 }

@@ -63,24 +63,26 @@ export function getAllOfficialStatuses(): Map<
  * 执行一次官方状态检查
  * 更新所有 Provider 的官方状态缓存
  */
-export async function runOfficialStatusCheckOnce(): Promise<void> {
-  try {
-    await ensurePollerLeadership();
-  } catch (error) {
-    logError("runOfficialStatusCheck.leadership", error);
-    return;
+export async function runOfficialStatusCheckOnce(options: {isolated?: boolean} = {}): Promise<void> {
+  if (!options.isolated) {
+    try {
+      await ensurePollerLeadership();
+    } catch (error) {
+      logError("runOfficialStatusCheck.leadership", error);
+      return;
+    }
+    if (!isPollerLeader()) {
+      return;
+    }
   }
-  if (!isPollerLeader()) {
-    return;
-  }
-  if (isOfficialStatusPolling()) {
+  if (!options.isolated && isOfficialStatusPolling()) {
     console.log(
       "[官方状态] 跳过本次检查(上次检查仍在进行中)..."
     );
     return;
   }
 
-  setOfficialStatusPolling(true);
+  if (!options.isolated) setOfficialStatusPolling(true);
   const startTime = Date.now();
 
   try {
@@ -103,9 +105,10 @@ export async function runOfficialStatusCheckOnce(): Promise<void> {
     const duration = Date.now() - startTime;
     console.log(`[官方状态] 检查完成,耗时 ${duration}ms`);
   } catch (error) {
+    if (options.isolated) throw error;
     logError("runOfficialStatusCheck", error);
     console.error("[官方状态] 检查失败:", error);
   } finally {
-    setOfficialStatusPolling(false);
+    if (!options.isolated) setOfficialStatusPolling(false);
   }
 }

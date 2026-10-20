@@ -28,6 +28,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (fetchErr || !setting) return NextResponse.json({ error: "设置项不存在" }, { status: 404 });
   if (!setting.editable) return NextResponse.json({ error: "该设置项不可编辑" }, { status: 403 });
 
+  if (key === "check_poll_interval_seconds"
+    && (!/^[0-9]{1,4}$/.test(String(value)) || Number(value) < 60 || Number(value) > 3600)) {
+    return NextResponse.json({ error: "检测间隔必须为 60～3600 秒的整数" }, { status: 400 });
+  }
+
   // secret 类型：空值提交视为「不修改」，保留原值
   if (setting.value_type === "secret" && !String(value)) {
     return NextResponse.json({ ok: true });

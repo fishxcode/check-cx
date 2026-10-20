@@ -1,5 +1,7 @@
 "use client";
 
+import {useVisibleRefresh} from "@/components/use-visible-refresh";
+
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Activity, ExternalLink, LayoutGrid, List, RefreshCcw} from "lucide-react";
 
@@ -12,7 +14,7 @@ import {GroupTags} from "@/components/group-tags";
 import {ProviderCard} from "@/components/provider-card";
 import {ProviderListItem} from "@/components/provider-list-item";
 import {ClientTime} from "@/components/client-time";
-import {fetchGroupWithCache, prefetchGroupData, setGroupCache} from "@/lib/core/group-frontend-cache";
+import {fetchGroupWithCache, setGroupCache} from "@/lib/core/group-frontend-cache";
 import type {AvailabilityPeriod, ProviderTimeline} from "@/lib/types";
 import type {GroupDashboardData} from "@/lib/core/group-data";
 import {cn} from "@/lib/utils";
@@ -129,10 +131,6 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
     }
   }, [groupName, initialData]);
 
-  useEffect(() => {
-    const currentPeriod = data.trendPeriod ?? "7d";
-    prefetchGroupData(groupName, ["24h", "7d", "15d", "30d"], currentPeriod).catch(() => undefined);
-  }, [data.trendPeriod, groupName]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -169,15 +167,7 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
     }
   }, [isCoarsePointer]);
 
-  useEffect(() => {
-    if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      refresh(undefined, false, true).catch(() => undefined);
-    }, data.pollIntervalMs);
-    return () => window.clearInterval(timer);
-  }, [data.pollIntervalMs, refresh]);
+  useVisibleRefresh(() => refresh(undefined, false, true));
 
   useEffect(() => {
     if (selectedPeriod === data.trendPeriod) {

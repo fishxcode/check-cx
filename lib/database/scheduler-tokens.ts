@@ -144,13 +144,14 @@ export async function deleteSchedulerToken(id: string): Promise<boolean> {
 }
 
 export async function verifySchedulerToken(
-  token: string
+  token: string,
+  options: {requestTimeoutMs?: number} = {}
 ): Promise<SchedulerTokenRecord | null> {
   if (!token) {
     return null;
   }
 
-  const admin = createAdminClient();
+  const admin = createAdminClient(options);
   const {data, error} = await admin
     .from("scheduler_tokens")
     .select("id,name,token_prefix,scope,enabled,last_used_at,expires_at,created_at")

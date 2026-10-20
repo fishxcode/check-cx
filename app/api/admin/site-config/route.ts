@@ -70,6 +70,11 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "不允许编辑此配置项" }, { status: 403 });
   }
 
+  if (key === "check_poll_interval_seconds"
+    && (!/^[0-9]{1,4}$/.test(String(value)) || Number(value) < 60 || Number(value) > 3600)) {
+    return NextResponse.json({ error: "检测间隔必须为 60～3600 秒的整数" }, { status: 400 });
+  }
+
   const admin = createAdminClient();
   const { error } = await admin
     .from("site_settings")

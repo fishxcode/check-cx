@@ -154,7 +154,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({error: "未找到指定配置"}, {status: 404});
     }
 
-    const results = await runChecksForConfigs(configs);
+    // 全量计划由队列执行；防止旧 Token 调用路径重新耗尽单次请求额度。
+    if (configs.length > 5) {
+      await finishTriggerLog(logId, {
+        status: "aborted", durationMs: Date.now() - startedAtMs,
+        configCount: 0, issueCount: 0, message: "同步检测最多 5 个配置，请使用队列调度",
+      });
+      return NextResponse.json({error: "同步检测最多 5 个配置，请使用队列调度"}, {status: 422});
+    }
+    const results = await runChecksForConfigs(configs, {strictPersistence: true});
     await runOfficialStatusCheckOnce();
 
     const issueResults = results.filter((result) =>
