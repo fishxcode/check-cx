@@ -10,6 +10,14 @@
       "id": "d1fa2c343b22494f9e37633b3f2ec8d7"
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CHECK_QUEUE",
+        "queue": "check-cx-checks"
+      }
+    ]
+  },
   "assets": {
     "not_found_handling": "none"
   }

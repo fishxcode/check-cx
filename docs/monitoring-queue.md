@@ -16,7 +16,7 @@
 2. 创建死信队列和工作队列：`wrangler queues create check-cx-checks-dlq`、`wrangler queues create check-cx-checks`。
 3. 部署主站，确认内部队列 API 可用、调度令牌已配置。
 4. 按 `worker/wrangler.toml` 部署触发 Worker，沿用后台生成的 `SCHEDULER_TOKEN`，基础地址指向主站。
-5. 停用仍调用旧批量同步接口的调度入口，检查新队列消费与历史落库。
+5. 主站已配置 `CHECK_QUEUE` producer，指向同一账户的 `check-cx-checks`；检查队列消费与历史落库。外部调度可继续使用主域名 `/api/internal/checks/run`。
 
 本文档不代表这些线上操作已经执行。本轮不主动运行构建、部署、创建队列或线上 SQL。
 
@@ -40,6 +40,32 @@
 Supabase Cron 可以替代 CF Cron 做单个轻量调度 Job，但不适合为 200 个模型各建一个 Job 或在数据库任务里等待全部外部探测。检测仍交给 Queue，主要模型调用负载不会减少。现阶段保留已配置的 CF Cron；若改用 Supabase Cron，应移除 CF 定时触发以只保留一个调度源。
 
 Supabase Cron 的 Job 定义保存在 cron.job，运行记录保存在 cron.job_run_details，Dashboard 的 Job History 可查看。该运行记录不会自动清理，需要单独保留策略；HTTP 入队成功也不代表模型检测完成，最终结果仍以业务任务表为准。
+
+## Supabase Cron 调用主域名
+
+`POST /api/internal/checks/run` 不传 `ids` 时默认使用队列，也可显式发送 `{"mode":"queue","event":"scheduled"}`。主站先验证调度 Token，创建持久化计划，再通过 `CHECK_QUEUE` 每批最多 100 条投递；消费者仍由独立 Worker 提供。需要先部署带此绑定的主站，并确认同名队列和消费者已存在。本次接口修改没有新增 SQL 迁移，但仍依赖上述已列出的队列迁移。
+
+在 Supabase Cron 的 SQL 任务中填写：
+
+```sql
+select net.http_post(
+  url := 'https://status.fishxcode.com/api/internal/checks/run',
+  headers := jsonb_build_object(
+    'Authorization', 'Bearer <新生成的调度 Token>',
+    'Content-Type', 'application/json'
+  ),
+  body := '{"mode":"queue","event":"scheduled"}'::jsonb,
+  timeout_milliseconds := 30000
+);
+```
+
+推荐 Cron 表达式 `* * * * *`，后台检测间隔设为 `3600` 秒：每分钟只做轻量调度和失败补偿，达到检测间隔后才创建新轮次。若必须每小时整点才调用，表达式为 `0 * * * *`，但补偿也可能延迟到下一小时。数据库按上一轮创建时间判断间隔，不能保证每轮精确落在整点。切换到 Supabase Cron 后仅移除 CF Cron 触发器，保留 Worker 的 Queue 消费者。
+
+返回 `202` 表示本次调度已接受，不代表检测完成，也不代表全部配置健康。`queuedCount` 是本次投递的任务数，可能包含补偿任务；为 0 表示本次没有可投递任务。`attemptId` 是数据库计算的调度周期标识，不保证对应本次新建轮次。日志与历史分别查看 `/admin/trigger-logs`、`/admin/history`。队列轮次沿用数据库的 worker 来源标记，不能仅凭此标记区分 Supabase 与 Cloudflare 调用。
+
+缺少绑定或投递失败返回 `503`；分批投递可能部分成功，数据库中的任务不会丢失，下一次调度在补偿窗口（约 3 分钟）后可重新投递。pg_net 返回的 request ID 不是 HTTP 成功状态，应在 `net._http_response` 检查对应请求的 `status_code`、`timed_out` 和 `error_msg`。
+
+显式 `{"mode":"sync","ids":["配置 UUID"]}` 保留最多 5 个配置的同步检测。同步模式必须指定 ID；无效 JSON、空 ID 数组、队列模式带 ID 都会拒绝，避免误触发全量。`failOnIssues` 只影响同步模式响应，队列模式不等待模型健康结果。
 
 ## 首页访问不会触发检测
 

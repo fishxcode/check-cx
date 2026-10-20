@@ -485,14 +485,15 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
           <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">调度 API Token</p>
-            <p className="text-xs text-muted-foreground mt-0.5">供 Uptime Kuma、Cloudflare Cron 等外部调度器调用内部批量检测接口</p>
+            <p className="text-xs text-muted-foreground mt-0.5">供 Supabase Cron 等外部调度器创建队列检测任务</p>
           </div>
         </div>
         <div className="space-y-4 p-4">
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
             <p>调用地址：<code className="rounded bg-muted px-1.5 py-0.5">POST /api/internal/checks/run</code></p>
             <p>认证方式：<code className="rounded bg-muted px-1.5 py-0.5">Authorization: Bearer &lt;token&gt;</code></p>
-            <p>请求体示例：<code className="rounded bg-muted px-1.5 py-0.5">{`{"failOnIssues":true}`}</code></p>
+            <p>返回 202 表示调度已接受，检测结果请查看检测历史；请求超时建议至少 30 秒。</p>
+            <p>请求体示例：<code className="rounded bg-muted px-1.5 py-0.5">{`{"mode":"queue","event":"scheduled"}`}</code></p>
           </div>
 
           <div className="flex flex-col gap-3 rounded-lg border border-border p-3 md:flex-row md:items-end">

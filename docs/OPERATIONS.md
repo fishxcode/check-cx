@@ -57,16 +57,16 @@
 
 ### 4.2 外部触发器
 
-- Cloudflare Cron Worker 或其他调度系统调用 `POST /api/internal/checks/run`。
+- Supabase Cron 等外部调度系统调用主域名 `POST /api/internal/checks/run`；Cloudflare Cron Worker 使用 `/api/internal/checks/queue` 获取计划后投递。
 - 请求使用 `Authorization: Bearer <Scheduler Token>` 鉴权。
-- 调用方可传 `{"ids":[...]}` 只检查指定配置，或省略 `ids` 检查全部启用配置。
+- 不带 `ids` 默认队列调度，推荐请求体 `{"mode":"queue","event":"scheduled"}`。主站需要 `CHECK_QUEUE` producer，消费者 Worker 必须保持运行。
+- 返回 202 代表调度已接受，不代表模型健康；建议 HTTP 超时 30 秒。`{"mode":"sync","ids":[...]}` 仅支持最多 5 个指定配置。详细 Supabase Cron SQL 见 [检测调度说明](monitoring-queue.md#supabase-cron-调用主域名)。
 - 仓库内 Cron Worker 的公开手动 GET 入口同样要求 Scheduler Token；Cron 事件不经过该公开入口。
 
 ### 4.3 多节点
 
-- 使用 `check_poller_leases` 表进行租约选主。
-- 多个触发请求可能同时到达，但只有持有租约的请求执行检查；其他请求不重复写入。
-- 必须为每个节点设置唯一 `CHECK_NODE_ID`，避免租约冲突。
+- 队列调度由数据库事务控制周期和防重，任务通过租约领取和唯一历史键避免重复落库。
+- 旧的小批量同步路径使用 `check_poller_leases` 表选主；该路径的每个节点需要唯一 `CHECK_NODE_ID`。
 
 ## 5. 运维操作
 

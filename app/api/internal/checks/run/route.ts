@@ -2,10 +2,10 @@ import {NextResponse, type NextRequest} from "next/server";
 
 import {createAdminClient} from "@/lib/supabase/admin";
 import {runChecksForConfigs} from "@/lib/core/config-check-execution";
+import {dispatchCheckQueue} from "@/lib/core/check-queue";
 import {runOfficialStatusCheckOnce} from "@/lib/core/official-status-poller";
 import {ensurePollerLeadership, isPollerLeader, releasePollerLeadership} from "@/lib/core/poller-leadership";
 import {setLastPingStartedAt, setPollerRunning} from "@/lib/core/global-state";
-import {loadProviderConfigsFromDB} from "@/lib/database/config-loader";
 import {
   touchSchedulerToken,
   verifySchedulerToken,
@@ -24,6 +24,8 @@ export const maxDuration = 300;
 interface RunChecksRequestBody {
   ids?: string[];
   failOnIssues?: boolean;
+  mode?: "queue" | "sync";
+  event?: "scheduled" | "fetch";
 }
 
 function getBearerToken(request: NextRequest): string {
@@ -67,9 +69,83 @@ async function loadConfigsByIds(ids: string[]): Promise<ProviderConfig[]> {
 
 export async function POST(request: NextRequest) {
   const token = getBearerToken(request);
-  const tokenRecord = await verifySchedulerToken(token);
+  const tokenRecord = await verifySchedulerToken(token, {requestTimeoutMs: 10_000});
   if (!tokenRecord) {
     return NextResponse.json({error: "unauthorized"}, {status: 401});
+  }
+
+  let body: RunChecksRequestBody;
+  try {
+    const text = await request.text();
+    const value: unknown = text.trim() ? JSON.parse(text) : {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("请求体必须是 JSON 对象");
+    }
+    const input = value as Record<string, unknown>;
+    if (input.mode !== undefined && input.mode !== "queue" && input.mode !== "sync") {
+      throw new Error("mode 仅支持 queue 或 sync");
+    }
+    if (input.event !== undefined && input.event !== "scheduled" && input.event !== "fetch") {
+      throw new Error("event 仅支持 scheduled 或 fetch");
+    }
+    if (input.failOnIssues !== undefined && typeof input.failOnIssues !== "boolean") {
+      throw new Error("failOnIssues 必须是布尔值");
+    }
+    if (input.ids !== undefined && (!Array.isArray(input.ids) || input.ids.length === 0 ||
+      !input.ids.every((id) => typeof id === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) {
+      throw new Error("ids 必须是非空的配置 UUID 数组");
+    }
+    body = input as RunChecksRequestBody;
+  } catch (error) {
+    return NextResponse.json({error: error instanceof SyntaxError
+      ? "请求体不是有效 JSON"
+      : error instanceof Error ? error.message : "无效请求"}, {status: 400});
+  }
+  const ids = [...new Set(body.ids ?? [])];
+  const mode = body.mode ?? (ids.length === 0 ? "queue" : "sync");
+  if (mode === "queue" && ids.length > 0) {
+    return NextResponse.json({error: "队列模式不支持 ids；指定配置请使用 sync 模式"}, {status: 400});
+  }
+  if (mode === "sync" && ids.length === 0) {
+    return NextResponse.json({error: "同步检测必须指定 ids"}, {status: 400});
+  }
+  if (mode === "sync" && ids.length > 5) {
+    return NextResponse.json({error: "同步检测最多 5 个配置，请使用队列调度"}, {status: 422});
+  }
+
+  if (mode === "queue") {
+    try {
+      const event = body.event ?? (request.headers.get("x-cx-trigger") === "scheduled" ? "scheduled" : "fetch");
+      // 先确认生产者绑定可用，避免数据库已建轮次但当前请求无法投递消息。
+      const {env} = await import("cloudflare:workers");
+      const queue = env.CHECK_QUEUE;
+      if (!queue || typeof queue.sendBatch !== "function") {
+        return NextResponse.json({error: "主站未绑定 CHECK_QUEUE"}, {status: 503});
+      }
+      const plan = await dispatchCheckQueue(event);
+      // 投递成功后才响应；中途失败由持久化任务和下一次调度补偿。
+      for (let offset = 0; offset < plan.tasks.length; offset += 100) {
+        await queue.sendBatch(plan.tasks.slice(offset, offset + 100).map((taskId) => ({
+          body: {taskId}, contentType: "json" as const,
+        })));
+      }
+      try {
+        await touchSchedulerToken(tokenRecord.id, {requestTimeoutMs: 2_000});
+      } catch {
+        console.error("[check-cx-run] 更新 Token 使用时间失败");
+      }
+      return NextResponse.json({
+        ok: true,
+        mode: "queue",
+        attemptId: plan.attemptId,
+        intervalSeconds: plan.intervalSeconds,
+        queuedCount: plan.tasks.length,
+      }, {status: 202});
+    } catch (error) {
+      console.error("[check-cx-run] 队列调度失败", error instanceof Error ? error.message : "未知错误");
+      return NextResponse.json({error: "队列调度暂未完成，请稍后重试"}, {status: 503});
+    }
   }
 
   // ---------- 触发日志 ----------
@@ -132,16 +208,9 @@ export async function POST(request: NextRequest) {
     setLastPingStartedAt(startedAtMs);
     ownsRunLock = true;
 
-    const body = await request.json().catch(() => ({} as RunChecksRequestBody));
-    const rawIds: unknown[] = Array.isArray(body.ids) ? body.ids : [];
-    const ids = rawIds.length > 0
-      ? rawIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      : [];
     const failOnIssues = body.failOnIssues !== false;
 
-    const configs = ids.length > 0
-      ? await loadConfigsByIds(ids)
-      : await loadProviderConfigsFromDB({forceRefresh: true});
+    const configs = await loadConfigsByIds(ids);
 
     if (ids.length > 0 && configs.length === 0) {
       await finishTriggerLog(logId, {

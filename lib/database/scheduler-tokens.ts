@@ -174,8 +174,11 @@ export async function verifySchedulerToken(
   return mapRow(row);
 }
 
-export async function touchSchedulerToken(id: string): Promise<void> {
-  const admin = createAdminClient();
+export async function touchSchedulerToken(
+  id: string,
+  options: {requestTimeoutMs?: number} = {}
+): Promise<void> {
+  const admin = createAdminClient(options);
   const {error} = await admin
     .from("scheduler_tokens")
     .update({last_used_at: new Date().toISOString()})
