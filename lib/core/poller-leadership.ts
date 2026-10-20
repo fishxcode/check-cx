@@ -15,6 +15,7 @@ const DEFAULT_NODE_ID = "local";
 
 let didWarnMissingNodeId = false;
 let initPromise: Promise<void> | null = null;
+let nodeId: string | null = null;
 
 function resolveNodeId(): string {
   const base =
@@ -31,33 +32,40 @@ function resolveNodeId(): string {
   return nodeId;
 }
 
-const NODE_ID = resolveNodeId();
+function getOrCreateNodeId(): string {
+  if (nodeId === null) {
+    nodeId = resolveNodeId();
+  }
+  return nodeId;
+}
 
 function setRole(nextRole: PollerRole): void {
   const currentRole = getPollerRole();
   if (currentRole === nextRole) {
     return;
   }
+  const currentNodeId = getOrCreateNodeId();
   setPollerRole(nextRole);
   console.log(
-    `[check-cx] 节点角色切换：${currentRole} -> ${nextRole} (node=${NODE_ID})`
+    `[check-cx] 节点角色切换：${currentRole} -> ${nextRole} (node=${currentNodeId})`
   );
 }
 
 async function refreshLeadership(): Promise<void> {
+  const currentNodeId = getOrCreateNodeId();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + LEASE_DURATION_MS);
   const currentRole = getPollerRole();
 
   if (currentRole === "leader") {
-    const renewed = await tryRenewPollerLease(NODE_ID, now, expiresAt);
+    const renewed = await tryRenewPollerLease(currentNodeId, now, expiresAt);
     if (renewed) {
       return;
     }
     setRole("standby");
   }
 
-  const acquired = await tryAcquirePollerLease(NODE_ID, now, expiresAt);
+  const acquired = await tryAcquirePollerLease(currentNodeId, now, expiresAt);
   if (acquired) {
     setRole("leader");
   }
@@ -91,7 +99,7 @@ export async function releasePollerLeadership(): Promise<boolean> {
   if (!isPollerLeader()) {
     return true;
   }
-  const released = await releasePollerLease(NODE_ID);
+  const released = await releasePollerLease(getOrCreateNodeId());
   if (released) {
     setRole("standby");
   }
@@ -99,5 +107,5 @@ export async function releasePollerLeadership(): Promise<boolean> {
 }
 
 export function getPollerNodeId(): string {
-  return NODE_ID;
+  return getOrCreateNodeId();
 }
