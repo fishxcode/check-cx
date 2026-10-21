@@ -45,7 +45,7 @@ function applyDashboardRateLimit(request: NextRequest): NextResponse | null {
   return response;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 公开 API：仅限速，不验证身份
