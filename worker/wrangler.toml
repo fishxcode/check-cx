@@ -1,0 +1,20 @@
+name = "check-cx-cron-trigger"
+main = "src/index.js"
+compatibility_date = "2026-10-19"
+
+# Cloudflare Cron Trigger：每 5 分钟唤醒一次 pump。
+#
+# 这是「心跳」，不是「检测频率」。是否开启新一轮检测由数据库里的
+# site_settings.check_poll_interval_seconds（当前 3600）决定，
+# 因此实际仍是每小时检测一次。
+#
+# 心跳故意比检测周期密：单次 pump 只跑约 45 秒，配置多时一轮检测
+# 需要多次 pump 才能跑完；若心跳也是一小时，剩余任务会干等一小时。
+[triggers]
+crons = ["*/5 * * * *"]
+
+# 环境变量（在 Cloudflare Dashboard 或 wrangler secret 配置）
+# CHECK_CX_API_BASE - 检测 API 基础地址，默认 https://status.fishxcode.com
+# SCHEDULER_TOKEN - admin 后台生成的调度 Token（Bearer 认证）
+[vars]
+CHECK_CX_API_BASE = "https://status.fishxcode.com"
