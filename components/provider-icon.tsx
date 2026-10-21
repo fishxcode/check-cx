@@ -1,22 +1,21 @@
 "use client";
 
-import Anthropic from "@lobehub/icons/es/Anthropic";
-import Gemini from "@lobehub/icons/es/Gemini";
-import Grok from "@lobehub/icons/es/Grok";
-import OpenAI from "@lobehub/icons/es/OpenAI";
-import type {ComponentType} from "react";
+import Anthropic from "@lobehub/icons/es/Anthropic/components/Mono";
+import Gemini from "@lobehub/icons/es/Gemini/components/Mono";
+import Grok from "@lobehub/icons/es/Grok/components/Mono";
+import type {IconType} from "@lobehub/icons/es/types";
+import OpenAI from "@lobehub/icons/es/OpenAI/components/Mono";
 
 import type {ProviderType} from "@/lib/types";
 import {cn} from "@/lib/utils";
 
 /**
- * 图标按子路径单独引入，不走包根 barrel：根入口会 re-export `features`，
- * 其中 ProviderCombine 依赖可选 peer `antd`，未安装时服务端环境打包会失败。
+ * 直接引用每个图标包的 `components/Mono`，绕开两级 barrel：
+ * 包根会 re-export `features`（ProviderCombine 依赖可选 peer `antd`），
+ * 次级入口 `es/<Provider>` 又会带入 Avatar（依赖 `antd-style`）。
+ * Mono 只有 `react` 依赖，是渲染时真正用到的那个组件。
  */
-const ICON_MAP: Record<
-  ProviderType,
-  ComponentType<{ className?: string; size?: number }>
-> = {
+const ICON_MAP: Record<ProviderType, IconType> = {
   openai: OpenAI,
   gemini: Gemini,
   anthropic: Anthropic,
