@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const REQUIRED_SITE_SETTINGS = [
+  {key: "show_sla", value: "true", description: "公开页面展示可用率 / SLA（关闭仅隐藏展示，保留统计和 monitoring 接口）", editable: true, value_type: "boolean"},
   {
     key: "global_group_health.enabled",
     value: "true",

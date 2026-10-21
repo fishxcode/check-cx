@@ -1,3 +1,4 @@
+import {publicMetadata} from "@/lib/core/public-metadata";
 import {notFound} from "next/navigation";
 import Link from "next/link";
 import {ChevronLeft} from "lucide-react";
@@ -5,7 +6,7 @@ import {ChevronLeft} from "lucide-react";
 import {GroupDashboardBootstrap} from "@/components/group-dashboard-bootstrap";
 import {getAvailableGroups} from "@/lib/core/group-data";
 import {loadGroupInfos} from "@/lib/database/group-info";
-import {getSiteSeoConfig, toAbsoluteUrl} from "@/lib/core/site-seo";
+import {getSiteSeoConfig} from "@/lib/core/site-seo";
 import {ClientYear} from "@/components/client-time";
 
 export const dynamic = "force-dynamic";
@@ -18,43 +19,23 @@ interface GroupPageProps {
 // 生成页面元数据
 export async function generateMetadata({ params }: GroupPageProps) {
   const { groupName } = await params;
-  const decodedGroupName = decodeURIComponent(groupName);
+  const decodedGroupName = groupName;
 
   const siteSeo = await getSiteSeoConfig();
-  const appTitle = siteSeo.title;
+
 
   // 获取分组信息
   const groupInfos = await loadGroupInfos();
   const groupInfo = groupInfos.find((g) => g.group_name === decodedGroupName);
   const groupDisplayName = groupInfo?.display_name || decodedGroupName;
   const groupDescription = groupInfo?.description || `查看 ${decodedGroupName} 分组下的模型健康状态`;
-  const canonical = toAbsoluteUrl(`/group/${encodeURIComponent(decodedGroupName)}`, siteSeo.siteUrl);
-
-  return {
-    title: groupDisplayName,
-    description: groupDescription,
-    keywords: [...siteSeo.keywords, groupDisplayName, decodedGroupName],
-    alternates: {
-      canonical: canonical ?? `/group/${encodeURIComponent(decodedGroupName)}`,
-    },
-    openGraph: {
-      type: "website",
-      url: canonical ?? undefined,
-      title: `${groupDisplayName} | ${appTitle}`,
-      description: groupDescription,
-      siteName: appTitle,
-    },
-    twitter: {
-      card: "summary",
-      title: `${groupDisplayName} | ${appTitle}`,
-      description: groupDescription,
-    },
-  };
+  return publicMetadata({title: groupDisplayName, description: groupDescription,
+    path: `/group/${encodeURIComponent(decodedGroupName)}`, scope: {scope: "group", value: decodedGroupName}});
 }
 
 export default async function GroupPage({ params }: GroupPageProps) {
   const { groupName } = await params;
-  const decodedGroupName = decodeURIComponent(groupName);
+  const decodedGroupName = groupName;
   const siteSeo = await getSiteSeoConfig();
 
   const availableGroups = await getAvailableGroups();

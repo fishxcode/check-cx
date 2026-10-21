@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { History, Filter, RefreshCw, Search, Trash2, Eye, Loader2, PauseCircle } from "lucide-react";
 import { Pagination } from "@/components/admin/pagination";
 import { CrudDialog } from "@/components/admin/crud-dialog";
@@ -59,6 +59,14 @@ export default function HistoryPage() {
   const [batchStopError, setBatchStopError]   = useState("");
   const [detailRow, setDetailRow]     = useState<HistoryRow | null>(null);
   const [togglingId, setTogglingId]   = useState<string | null>(null);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const loadSequence = useRef(0);
+  const clearInFlight = useRef(false);
 
   useEffect(() => {
     fetch("/api/admin/configs")
@@ -70,20 +78,29 @@ export default function HistoryPage() {
   }, []);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
+    setLoadError("");
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (configId) params.set("config_id", configId);
-    if (status)   params.set("status", status);
-    const res = await fetch(`/api/admin/history?${params}`);
-    if (res.ok) {
+    if (status) params.set("status", status);
+    try {
+      const res = await fetch(`/api/admin/history?${params}`);
+      if (!res.ok) throw new Error("加载检测历史失败");
       const json = await res.json();
+      if (sequence !== loadSequence.current) return;
       setRows(json.data ?? []);
       setTotal(json.total ?? 0);
+    } catch {
+      if (sequence === loadSequence.current) {
+        setLoadError("加载检测历史失败，请刷新重试");
+      }
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
     }
-    setLoading(false);
   }, [page, pageSize, configId, status]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshVersion]);
 
   const filtered = search.trim()
     ? rows.filter((r) => {
@@ -124,6 +141,42 @@ export default function HistoryPage() {
     setSelected(new Set());
     setBatchDeleteOpen(false);
     load();
+  }
+
+  async function handleClearHistory() {
+    if (clearInFlight.current) return;
+    clearInFlight.current = true;
+    setClearing(true);
+    setClearError("");
+    setNotice("");
+    try {
+      const res = await fetch("/api/admin/history", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(result?.error ?? "清空检测历史失败，请稍后重试");
+      if (result?.ok !== true || typeof result.deletedCount !== "number") {
+        throw new Error("未能确认清理结果，请刷新列表检查");
+      }
+
+      // 作废清理前的请求，防止旧响应重新显示已删除的记录。
+      ++loadSequence.current;
+      setRows([]);
+      setTotal(0);
+      setSelected(new Set());
+      setDetailRow(null);
+      setClearOpen(false);
+      setNotice(`已清理 ${result.deletedCount.toLocaleString()} 条历史检测记录，后续检测仍会继续。`);
+      setPage(1);
+      setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setClearError(error instanceof Error ? error.message : "清空检测历史失败，请检查网络后重试");
+    } finally {
+      clearInFlight.current = false;
+      setClearing(false);
+    }
   }
 
   /** 批量停止检测：选中记录所属的配置去重后禁用（enabled=false），停止未来检测 */
@@ -187,9 +240,18 @@ export default function HistoryPage() {
             className="h-8 w-40 rounded-md border border-input bg-background pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
-        <button onClick={load} disabled={loading} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50">
+        <button onClick={load} disabled={loading || clearing} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           刷新
+        </button>
+        <button
+          type="button"
+          disabled={clearing || batchDeleting}
+          onClick={() => { setClearError(""); setClearOpen(true); }}
+          className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          一键清空历史
         </button>
         <Filter className="h-3.5 w-3.5 text-muted-foreground" />
         <select value={configId} onChange={(e) => applyFilter(e.target.value, status)}
@@ -203,6 +265,9 @@ export default function HistoryPage() {
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
+
+      {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
 
       {/* 批量操作栏 */}
       {selected.size > 0 && (
@@ -327,6 +392,21 @@ export default function HistoryPage() {
         onPageChange={setPage}
         onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
       />
+
+      <CrudDialog
+        open={clearOpen}
+        onOpenChange={(open) => { if (!clearInFlight.current) setClearOpen(open); }}
+        title="确认清空全部检测历史"
+        onSubmit={handleClearHistory}
+        loading={clearing}
+      >
+        <div className="space-y-2 text-sm">
+          <p>将清空所有配置截至本次清理开始时的检测记录，不受当前筛选、搜索和分页影响。</p>
+          <p className="text-destructive">此操作不可撤销，请确认后继续。</p>
+          <p className="text-muted-foreground">配置会保留，检测继续运行，后续仍会产生新记录。</p>
+          {clearError && <p role="alert" className="text-destructive">{clearError}</p>}
+        </div>
+      </CrudDialog>
 
       {/* 批量删除确认 */}
       <CrudDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen} title="确认批量删除" onSubmit={handleBatchDelete} loading={batchDeleting}>

@@ -10,7 +10,7 @@ import type {AvailabilityPeriod, DashboardData} from "@/lib/types";
 
 const DEFAULT_PERIOD: AvailabilityPeriod = "7d";
 
-export function DashboardBootstrap() {
+export function DashboardBootstrap({vendorId}: {vendorId?: string} = {}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [siteConfig, setSiteConfig] = useState<Awaited<ReturnType<typeof getSiteConfig>> | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -96,5 +96,5 @@ export function DashboardBootstrap() {
     );
   }
 
-  return <DashboardView initialData={data} siteConfig={siteConfig} />;
+  return <DashboardView initialData={data} siteConfig={siteConfig} vendorId={vendorId} />;
 }

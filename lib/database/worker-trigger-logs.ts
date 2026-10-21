@@ -60,7 +60,7 @@ export async function finishTriggerLog(
   if (!logId) return;
   try {
     const admin = createAdminClient();
-    await admin
+    const {error} = await admin
       .from("worker_trigger_logs")
       .update({
         status: result.status,
@@ -70,7 +70,9 @@ export async function finishTriggerLog(
         message: result.message ?? null,
         finished_at: new Date().toISOString(),
       })
-      .eq("id", logId);
+      .eq("id", logId)
+      .eq("status", "running");
+    if (error) throw new Error(`回填调度日志失败：${error.code}`);
   } catch (err) {
     logError("回填触发日志失败", err);
   }

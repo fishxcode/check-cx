@@ -10,17 +10,22 @@ import { logError } from "../utils";
 import type { CheckResult } from "../types";
 import type { AlertChannelRow } from "../types/database";
 
-export async function sendPollSummary(results: CheckResult[]): Promise<void> {
+export async function sendPollSummary(
+  results: CheckResult[],
+  options: {channelIds?: string[]; strict?: boolean} = {}
+): Promise<void> {
   const raw = getSiteSettingSync("alert.summary_channel_ids", "");
-  if (!raw) return;
+  if (!raw && !options.channelIds) return;
 
   let channelIds: string[];
   try {
-    channelIds = JSON.parse(raw);
+    channelIds = options.channelIds ?? JSON.parse(raw);
     if (!Array.isArray(channelIds) || channelIds.length === 0) return;
   } catch {
     return;
   }
+
+  if (options.strict && channelIds.length !== 1) throw new Error("队列汇总每次只允许一个渠道");
 
   const counts = { operational: 0, degraded: 0, failed: 0 };
   const abnormal: CheckResult[] = [];
@@ -56,11 +61,13 @@ export async function sendPollSummary(results: CheckResult[]): Promise<void> {
 
   const content = lines.join("\n");
 
-  const { data } = await createAdminClient()
+  const { data, error } = await createAdminClient({requestTimeoutMs: options.strict ? 10_000 : undefined})
     .from("alert_channels")
     .select("*")
     .in("id", channelIds)
     .eq("enabled", true);
+
+  if (options.strict && error) throw new Error(`读取汇总渠道失败：${error.code}`);
 
   for (const ch of data ?? []) {
     const channel = ch as AlertChannelRow;
@@ -82,6 +89,7 @@ export async function sendPollSummary(results: CheckResult[]): Promise<void> {
       }
     } catch (err) {
       logError(`汇总推送失败 channel=${channel.id}`, err);
+      if (options.strict) throw err;
     }
   }
 }

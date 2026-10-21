@@ -4,12 +4,13 @@
 
 import type {CheckResult, HealthStatus} from "./check";
 
-export type AvailabilityPeriod = "7d" | "15d" | "30d";
+export type AvailabilityPeriod = "24h" | "7d" | "15d" | "30d";
 
 export interface AvailabilityStat {
   period: AvailabilityPeriod;
   totalChecks: number;
   operationalCount: number;
+  successCount?: number;
   availabilityPct: number | null;
 }
 
@@ -103,10 +104,30 @@ export interface GroupedProviderTimelines {
   tags: string; // 分组 Tag（英文逗号分隔字符串）
 }
 
+/** 首页仅传递展示所需的厂家及配置字段。 */
+export interface ModelVendor {
+  id: string;
+  name: string;
+  displayName: string;
+  icon: string | null;
+}
+
+export interface PendingMonitor {
+  id: string;
+  name: string;
+  model: string;
+  groupName: string | null;
+}
+
 /**
  * Dashboard 完整数据
  */
 export interface DashboardData {
+  modelDescriptions?: Record<string, string>;
+  modelGroups?: Record<string, string[]>;
+  monitoring?: import("./monitoring").MonitoringSnapshot;
+  modelVendors?: Record<string, ModelVendor>;
+  pendingConfigs?: PendingMonitor[];
   providerTimelines: ProviderTimeline[];
   groupInfos: GroupInfoSummary[];
   globalGroupHealth?: GlobalGroupHealthSummary;

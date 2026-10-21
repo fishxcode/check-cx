@@ -15,7 +15,8 @@ import {clearPingCache} from "./global-state";
 import {sendPollSummary} from "./poll-summary";
 
 export async function runChecksForConfigs(
-  configs: ProviderConfig[]
+  configs: ProviderConfig[],
+  options: {strictPersistence?: boolean} = {}
 ): Promise<CheckResult[]> {
   const activeConfigs = configs.filter((config) => !config.is_maintenance);
   if (activeConfigs.length === 0) {
@@ -24,7 +25,7 @@ export async function runChecksForConfigs(
 
   const results = await runProviderChecks(activeConfigs);
 
-  await historySnapshotStore.append(results);
+  await historySnapshotStore.append(results, {strict: options.strictPersistence});
   await Promise.allSettled(
     results.map((result) =>
       evaluateAlerts(result.id, result.name, result.status, result.latencyMs ?? null)

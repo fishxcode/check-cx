@@ -482,7 +482,10 @@ function logCheckResult(
  * - failed：请求失败、超时或回复为空
  * - error：请求过程中发生异常
  */
-export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResult> {
+export async function checkWithAiSdk(
+  config: ProviderConfig,
+  options: {maxRetries?: number} = {}
+): Promise<CheckResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const startedAt = Date.now();
@@ -516,6 +519,7 @@ export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResul
         model,
         prompt: challenge.prompt,
         abortSignal: controller.signal,
+        maxRetries: options.maxRetries ?? 2,
         ...(providerOptions && { providerOptions }),
       });
       collectedResponse = result.text;
@@ -525,6 +529,7 @@ export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResul
         model,
         prompt: challenge.prompt,
         abortSignal: controller.signal,
+        maxRetries: options.maxRetries ?? 2,
         ...(providerOptions && { providerOptions }),
         onError({ error }) {
           streamError = error as AIApiCallError;

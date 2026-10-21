@@ -38,12 +38,19 @@ interface SchedulerToken {
 function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () => void }) {
   const isSecret = setting.value_type === "secret";
   const isBoolean = setting.value_type === "boolean";
+  const isCheckInterval = setting.key === "check_poll_interval_seconds";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(isSecret ? "" : (setting.value ?? ""));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const intervalSeconds = Number(editing ? draft : setting.value);
+  const validInterval = Number.isInteger(intervalSeconds) && intervalSeconds >= 60 && intervalSeconds <= 3600;
 
   async function save(nextValue: string = draft) {
+    if (isCheckInterval && (!/^[0-9]{1,4}$/.test(nextValue) || Number(nextValue) < 60 || Number(nextValue) > 3600)) {
+      setErr("检测间隔必须为 60～3600 秒的整数");
+      return;
+    }
     setSaving(true);
     setErr("");
     const res = await fetch(`/api/admin/settings/${setting.key}`, {
@@ -67,7 +74,10 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               type={isSecret ? "password" : setting.value_type === "number" ? "number" : "text"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              list={isBoolean ? `${setting.key}-options` : undefined}
+              list={isBoolean || isCheckInterval ? `${setting.key}-options` : undefined}
+              min={isCheckInterval ? 60 : undefined}
+              max={isCheckInterval ? 3600 : undefined}
+              step={isCheckInterval ? 1 : undefined}
               placeholder={isSecret ? "输入新密钥（留空保留原值）" : undefined}
               className="h-7 w-40 rounded border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
@@ -77,6 +87,14 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               <datalist id={`${setting.key}-options`}>
                 <option value="true" />
                 <option value="false" />
+              </datalist>
+            )}
+            {isCheckInterval && (
+              <datalist id={`${setting.key}-options`}>
+                <option value="300">5 分钟</option>
+                <option value="900">15 分钟</option>
+                <option value="1800">30 分钟</option>
+                <option value="3600">60 分钟</option>
               </datalist>
             )}
             <button onClick={() => void save()} disabled={saving} className="rounded p-1 text-green-600 hover:bg-muted">
@@ -115,6 +133,12 @@ function EditableRow({ setting, onSaved }: { setting: SiteSetting; onSaved: () =
               </>
             )}
           </div>
+        )}
+        {isCheckInterval && (
+          <p className="mt-2 max-w-md text-xs text-muted-foreground">
+            间隔为 60～3600 秒，下次调度时生效，无需重启。上一轮未完成时不会叠加。
+            {validInterval && ` 按 200 个配置估算，每日约 ${Math.round(200 * 86400 / intervalSeconds).toLocaleString("zh-CN")} 次检测，不含重试。`}
+          </p>
         )}
       </td>
     </tr>
@@ -461,14 +485,15 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
           <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">调度 API Token</p>
-            <p className="text-xs text-muted-foreground mt-0.5">供 Uptime Kuma、Cloudflare Cron 等外部调度器调用内部批量检测接口</p>
+            <p className="text-xs text-muted-foreground mt-0.5">供 Supabase Cron 等外部调度器创建队列检测任务</p>
           </div>
         </div>
         <div className="space-y-4 p-4">
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
             <p>调用地址：<code className="rounded bg-muted px-1.5 py-0.5">POST /api/internal/checks/run</code></p>
             <p>认证方式：<code className="rounded bg-muted px-1.5 py-0.5">Authorization: Bearer &lt;token&gt;</code></p>
-            <p>请求体示例：<code className="rounded bg-muted px-1.5 py-0.5">{`{"failOnIssues":true}`}</code></p>
+            <p>返回 202 表示调度已接受，检测结果请查看检测历史；请求超时建议至少 30 秒。</p>
+            <p>请求体示例：<code className="rounded bg-muted px-1.5 py-0.5">{`{"mode":"queue","event":"scheduled"}`}</code></p>
           </div>
 
           <div className="flex flex-col gap-3 rounded-lg border border-border p-3 md:flex-row md:items-end">

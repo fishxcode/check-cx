@@ -2,7 +2,7 @@
 
 import {useEffect, useState} from "react";
 import Link from "next/link";
-import {Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
+import {ExternalLink, Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
 
 import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
@@ -14,7 +14,9 @@ import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/stat
 import {ClientTime} from "@/components/client-time";
 import {loadConfigState} from "@/lib/utils/admin-config-state";
 import {cn} from "@/lib/utils";
+import {useMonitoringDisplay} from "@/components/monitoring-display-context";
 import {getModelPath} from "@/lib/utils/model-slug";
+import {SourceGroupLabel} from "@/components/source-group-label";
 
 interface ProviderCardProps {
   timeline: ProviderTimeline;
@@ -53,6 +55,7 @@ export function ProviderCard({
   selectedPeriod,
 }: ProviderCardProps) {
   const { id, latest, items } = timeline;
+  const {descriptions} = useMonitoringDisplay();
   const preset = STATUS_META[latest.status];
   const isMaintenance = latest.status === "maintenance";
   const officialStatus = latest.officialStatus;
@@ -97,7 +100,7 @@ export function ProviderCard({
   }
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-background/40 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20">
+    <div className="group relative isolate flex flex-col overflow-hidden rounded-2xl border border-border/40 bg-background/40 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20 [&_button]:relative [&_button]:z-20">
       {/* Decorative markers */}
       <CornerPlus className="left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
       <CornerPlus className="right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -113,7 +116,9 @@ export function ProviderCard({
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="flex-1 truncate text-sm font-bold leading-none tracking-tight text-foreground sm:text-base">
-                  {latest.name}
+                  <Link href={getModelPath(latest.model)} aria-label={`查看 ${latest.model} 模型详情`} className="after:absolute after:inset-0 after:z-10 after:rounded-2xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary">
+                    {latest.name}
+                  </Link>
                 </h3>
                 {isAdmin && (
                   <div className="flex shrink-0 items-center gap-1">
@@ -162,13 +167,25 @@ export function ProviderCard({
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
                   {PROVIDER_LABEL[latest.type]}
                 </span>
-                <Link href={getModelPath(latest.model)} className="break-all font-mono opacity-70 transition-colors hover:text-foreground hover:opacity-100">
+                <Link href={getModelPath(latest.model)} className="relative z-20 break-all font-mono opacity-70 transition-colors hover:text-foreground hover:opacity-100">
                   {latest.model}
                 </Link>
+                <a
+                  href={`https://fishxcode.com/rankings/model/${encodeURIComponent(latest.model)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative z-20 inline-flex shrink-0 items-center rounded-md p-0.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+                  aria-label={`查看 ${latest.model} 排行`}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
             </div>
           </div>
         </div>
+
+        <SourceGroupLabel modelName={latest.model} groupName={latest.groupName} className="mt-1" />
+        {descriptions[latest.model] && <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" title={descriptions[latest.model]}>{descriptions[latest.model]}</p>}
 
         <div className="mb-3 grid grid-cols-2 gap-2.5">
           <div className="rounded-lg bg-muted/30 p-2 transition-colors group-hover:bg-muted/50">
@@ -176,7 +193,7 @@ export function ProviderCard({
               <Zap className="h-3 w-3" />
               <span className="text-[10px] font-semibold uppercase tracking-wider">对话延迟</span>
             </div>
-            <div className="mt-1 font-mono text-base font-medium leading-none text-foreground">
+            <div className="relative z-20 mt-1 w-fit select-text font-mono text-base font-medium leading-none text-foreground">
               {formatLatency(latest.latencyMs)}
             </div>
           </div>
@@ -186,7 +203,7 @@ export function ProviderCard({
               <Radio className="h-3 w-3" />
               <span className="text-[10px] font-semibold uppercase tracking-wider">端点 PING</span>
             </div>
-            <div className="mt-1 font-mono text-base font-medium leading-none text-foreground">
+            <div className="relative z-20 mt-1 w-fit select-text font-mono text-base font-medium leading-none text-foreground">
               {formatLatency(latest.pingLatencyMs)}
             </div>
           </div>
@@ -261,12 +278,12 @@ export function ProviderCard({
             )}
           </div>
 
-          <AvailabilityStats stats={availabilityStats} period={selectedPeriod} isMaintenance={isMaintenance} />
+          <div className="relative z-20"><AvailabilityStats stats={availabilityStats} period={selectedPeriod} isMaintenance={isMaintenance} /></div>
         </div>
       </div>
 
       {/* Timeline Section - Visual separation */}
-      <div className="border-t border-border/40 bg-muted/10 px-4 py-3">
+      <div className="relative z-20 border-t border-border/40 bg-muted/10 px-4 py-3">
         <StatusTimeline items={items} nextRefreshInMs={timeToNextRefresh} isMaintenance={isMaintenance} />
       </div>
     </div>

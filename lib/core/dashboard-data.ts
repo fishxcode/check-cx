@@ -8,9 +8,11 @@
  */
 import {loadProviderConfigsFromDB} from "../database/config-loader";
 import {loadGroupInfos} from "../database/group-info";
+import {getDisplayMonitoringStatistics} from "./monitoring-display";
 import {getAvailabilityStats} from "../database/availability";
 import {getPollingIntervalLabel, getPollingIntervalMs} from "./polling-config";
 import {buildProviderTimelines, loadSnapshotForScope} from "./health-snapshot-service";
+import {getConfiguredModelDescriptions, getConfiguredModelGroups, getConfiguredModelVendors} from "./model-pricing";
 import {loadGlobalGroupHealth} from "./global-group-health";
 import type {AvailabilityPeriod, DashboardData, GroupInfoSummary, RefreshMode,} from "../types";
 
@@ -43,7 +45,7 @@ export function resetDashboardCacheMetrics(): void {
   dashboardCacheMetrics.inflightHits = 0;
 }
 
-const DEFAULT_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_DASHBOARD_CACHE_TTL_MS = 30_000;
 const dashboardCache = new Map<string, DashboardCacheEntry>();
 
 export function clearDashboardDataCache(): void {
@@ -60,7 +62,7 @@ function getDashboardCacheKey(
 
 function getDashboardCacheTtlMs(pollIntervalMs: number): number {
   if (Number.isFinite(pollIntervalMs) && pollIntervalMs > 0) {
-    return pollIntervalMs;
+    return Math.min(pollIntervalMs, 30_000);
   }
   return DEFAULT_DASHBOARD_CACHE_TTL_MS;
 }
@@ -146,13 +148,25 @@ async function loadDashboardDataInternal(options?: {
 
     const providerTimelines = buildProviderTimelines(history, maintenanceConfigs);
 
+    const timelineIds = new Set(providerTimelines.map((timeline) => timeline.id));
+    const pendingConfigs = activeConfigs
+      .filter((config) => !timelineIds.has(config.id))
+      .map((config) => ({
+        id: config.id,
+        name: config.name,
+        model: config.model,
+        groupName: config.groupName ?? null,
+      }));
+
     let lastUpdated: string | null = null;
     let lastUpdatedMs = 0;
     for (const timeline of providerTimelines) {
-      const checkedAtMs = Date.parse(timeline.latest.checkedAt);
-      if (Number.isFinite(checkedAtMs) && checkedAtMs > lastUpdatedMs) {
-        lastUpdatedMs = checkedAtMs;
-        lastUpdated = timeline.latest.checkedAt;
+      for (const item of timeline.items) {
+        const checkedAtMs = Date.parse(item.checkedAt);
+        if (Number.isFinite(checkedAtMs) && checkedAtMs > lastUpdatedMs) {
+          lastUpdatedMs = checkedAtMs;
+          lastUpdated = item.checkedAt;
+        }
       }
     }
 
@@ -165,23 +179,32 @@ async function loadDashboardDataInternal(options?: {
       tags: info.tags ?? "",
     }));
     const configIds = allConfigs.map((config) => config.id);
-    const [availabilityStats, globalGroupHealth] = await Promise.all([
+    const [availabilityStats, globalGroupHealth, modelVendors, monitoring, modelDescriptions, modelGroups] = await Promise.all([
       getAvailabilityStats(configIds),
       loadGlobalGroupHealth({
         forceRefresh: refreshMode === "always",
         windows: ["24h"],
       }),
+      getConfiguredModelVendors(allConfigs.map((config) => config.model)),
+      getDisplayMonitoringStatistics(),
+      getConfiguredModelDescriptions(allConfigs.map((config) => config.model)),
+      getConfiguredModelGroups(allConfigs.map((config) => config.model)),
     ]);
 
     const data: DashboardData = {
       providerTimelines,
+      pendingConfigs,
+      modelVendors,
+      modelDescriptions,
+      modelGroups,
       groupInfos: groupInfoSummaries,
       globalGroupHealth,
       lastUpdated,
-      total: providerTimelines.length,
+      total: providerTimelines.length + pendingConfigs.length,
       pollIntervalLabel,
       pollIntervalMs,
       availabilityStats,
+      monitoring,
       trendPeriod,
       generatedAt,
     };

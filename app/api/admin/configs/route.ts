@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkConfigDuplicate, DUPLICATE_CONFIG_MESSAGE } from "@/lib/database/config-duplicates";
 import { clearAllCaches } from "@/lib/core/cache-invalidation";
 import { runChecksForConfigs } from "@/lib/core/config-check-execution";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
@@ -29,7 +30,9 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const masked = data.map((row) => ({ ...row, api_key: maskKey(row.api_key) }));
+  const sync = await admin.from("check_configs").select("id,sync_enabled,sync_disabled,sync_missing_count,sync_checked_at");
+  const syncById = new Map((sync.data ?? []).map((row) => [row.id, row]));
+  const masked = data.map((row) => ({ ...row, ...syncById.get(row.id), api_key: maskKey(row.api_key) }));
   return NextResponse.json(masked);
 }
 
@@ -43,12 +46,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "缺少必填字段" }, { status: 400 });
   }
 
+  if (
+    [type, endpoint, api_key, model].some((value) => typeof value !== "string" || !value.trim()) ||
+    (group_name != null && typeof group_name !== "string")
+  ) {
+    return NextResponse.json({ error: "类型、端点、API Key 和模型必须为非空字符串，分组必须为字符串" }, { status: 400 });
+  }
+
   const intervalCheck = validateOptionalInt(check_interval_override, CHECK_INTERVAL_RANGE.min, CHECK_INTERVAL_RANGE.max);
   if ("error" in intervalCheck) return NextResponse.json({ error: `检查间隔${intervalCheck.error}` }, { status: 400 });
   const thresholdCheck = validateOptionalInt(latency_threshold_ms, LATENCY_THRESHOLD_RANGE.min, LATENCY_THRESHOLD_RANGE.max);
   if ("error" in thresholdCheck) return NextResponse.json({ error: `延迟阈值${thresholdCheck.error}` }, { status: 400 });
 
   const admin = createAdminClient();
+  const duplicateCheck = await checkConfigDuplicate(admin, {
+    type, endpoint, api_key, group_name: group_name || null,
+    models: [model],
+  });
+  if (duplicateCheck.error) {
+    return NextResponse.json({ error: "检查配置是否重复失败，请稍后重试" }, { status: 500 });
+  }
+  if (duplicateCheck.duplicate) {
+    return NextResponse.json({ error: DUPLICATE_CONFIG_MESSAGE }, { status: 409 });
+  }
   const { data, error } = await admin
     .from("check_configs")
     .insert({

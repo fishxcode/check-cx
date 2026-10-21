@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {loadGroupDashboardData} from "@/lib/core/group-data";
-import {getPollingIntervalMs} from "@/lib/core/polling-config";
+import {withPublicResponseCache} from "@/lib/core/public-response-cache";
 import type {AvailabilityPeriod} from "@/lib/types";
 
 interface RouteContext {
@@ -9,9 +9,6 @@ interface RouteContext {
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
-
-/** 数据变化周期：5 分钟 */
-const DATA_CHANGE_CYCLE_SECONDS = 5 * 60;
 
 /**
  * 生成简单的哈希作为 ETag
@@ -32,57 +29,22 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const { searchParams } = new URL(_request.url);
   const period = searchParams.get("trendPeriod");
-  const trendPeriod = (["7d", "15d", "30d"] as AvailabilityPeriod[]).includes(
+  const trendPeriod = (["24h", "7d", "15d", "30d"] as AvailabilityPeriod[]).includes(
     period as AvailabilityPeriod
   )
     ? (period as AvailabilityPeriod)
-    : undefined;
+    : "7d";
 
-  const data = await loadGroupDashboardData(decodedGroupName, {
-    refreshMode: "never",
-    trendPeriod,
-  });
-
-  if (!data) {
-    return NextResponse.json(
-      { error: "分组不存在或没有配置" },
-      { status: 404 }
-    );
-  }
-
-  // 生成 ETag（基于数据内容）
-  const { generatedAt, ...etagPayload } = data;
-  void generatedAt;
-  const jsonBody = JSON.stringify(etagPayload);
-  const etag = generateETag(jsonBody);
-
-  // 检查条件请求
-  const ifNoneMatch = _request.headers.get("If-None-Match");
-  if (ifNoneMatch === etag) {
-    return new Response(null, {
-      status: 304,
-      headers: {
-        ETag: etag,
-      },
+  return withPublicResponseCache(_request, `group:${JSON.stringify([decodedGroupName, trendPeriod])}`, async () => {
+    const data = await loadGroupDashboardData(decodedGroupName, {
+      refreshMode: "never",
+      trendPeriod,
     });
-  }
-
-  // 计算缓存时间
-  const pollIntervalSeconds = Math.floor(getPollingIntervalMs() / 1000);
-
-  const response = NextResponse.json(data);
-
-  // Cache-Control: 浏览器每次都向 CDN 验证
-  response.headers.set("Cache-Control", "public, no-cache");
-  // CDN-Cache-Control: Cloudflare 边缘节点缓存
-  response.headers.set("CDN-Cache-Control", `max-age=${pollIntervalSeconds}`);
-  // Cloudflare-CDN-Cache-Control: 支持 stale-while-revalidate
-  response.headers.set(
-    "Cloudflare-CDN-Cache-Control",
-    `max-age=${pollIntervalSeconds}, stale-while-revalidate=${DATA_CHANGE_CYCLE_SECONDS}`
-  );
-  response.headers.set("ETag", etag);
-  response.headers.set("Vary", "Accept-Encoding");
-
-  return response;
+    if (!data) {
+      return NextResponse.json({error: "分组不存在或没有配置"}, {status: 404});
+    }
+    const {generatedAt, ...etagPayload} = data;
+    void generatedAt;
+    return NextResponse.json(data, {headers: {ETag: generateETag(JSON.stringify(etagPayload))}});
+  });
 }

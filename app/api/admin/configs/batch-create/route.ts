@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkConfigDuplicate, DUPLICATE_CONFIG_MESSAGE } from "@/lib/database/config-duplicates";
 import { clearAllCaches } from "@/lib/core/cache-invalidation";
 import { runChecksForConfigs } from "@/lib/core/config-check-execution";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
@@ -36,10 +37,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "缺少必填字段或模型列表为空" }, { status: 400 });
     }
 
+    if (
+      [type, endpoint, api_key].some((value) => typeof value !== "string" || !value.trim()) ||
+      (group_name != null && typeof group_name !== "string") ||
+      models.some((value: unknown) => typeof value !== "string" || !value.trim())
+    ) {
+      return NextResponse.json({ error: "类型、端点、API Key 和模型必须为非空字符串，分组必须为字符串" }, { status: 400 });
+    }
+
+    const uniqueModels = [...new Set<string>(models)];
     const admin = createAdminClient();
+    const duplicateCheck = await checkConfigDuplicate(admin, {
+      type, endpoint, api_key, group_name: group_name || null,
+      models: uniqueModels,
+    });
+    if (duplicateCheck.error) {
+      return NextResponse.json({ error: "检查配置是否重复失败，请稍后重试" }, { status: 500 });
+    }
+    if (duplicateCheck.duplicate) {
+      return NextResponse.json({ error: DUPLICATE_CONFIG_MESSAGE }, { status: 409 });
+    }
 
     // 批量插入配置
-    const configs = models.map((model: string) => ({
+    const configs = uniqueModels.map((model) => ({
       name: `${type.toUpperCase()} ${model}`,
       type,
       model,

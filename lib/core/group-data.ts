@@ -1,3 +1,5 @@
+import {getPublicConfigs} from "../database/public-configs";
+import {getConfiguredModelDescriptions, getConfiguredModelGroups} from "./model-pricing";
 /**
  * 分组数据加载模块
  *
@@ -7,6 +9,7 @@
  */
 import {loadProviderConfigsFromDB} from "../database/config-loader";
 import {getGroupInfo} from "../database/group-info";
+import {getDisplayMonitoringStatistics} from "./monitoring-display";
 import {getAvailabilityStats} from "../database/availability";
 import {getPollingIntervalLabel, getPollingIntervalMs} from "./polling-config";
 import {buildProviderTimelines, loadSnapshotForScope} from "./health-snapshot-service";
@@ -19,7 +22,7 @@ interface GroupDashboardCacheEntry {
   inflight?: Promise<GroupDashboardData | null>;
 }
 
-const DEFAULT_GROUP_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_GROUP_CACHE_TTL_MS = 30_000;
 const groupDashboardCache = new Map<string, GroupDashboardCacheEntry>();
 
 export function clearGroupDashboardCache(): void {
@@ -37,7 +40,7 @@ function getGroupCacheKey(
 
 function getGroupCacheTtlMs(pollIntervalMs: number): number {
   if (Number.isFinite(pollIntervalMs) && pollIntervalMs > 0) {
-    return pollIntervalMs;
+    return Math.min(pollIntervalMs, 30_000);
   }
   return DEFAULT_GROUP_CACHE_TTL_MS;
 }
@@ -46,6 +49,10 @@ function getGroupCacheTtlMs(pollIntervalMs: number): number {
  * 分组 Dashboard 数据结构
  */
 export interface GroupDashboardData {
+  modelDescriptions?: Record<string, string>;
+  modelGroups?: Record<string, string[]>;
+  monitoring?: import("../types/monitoring").MonitoringSnapshot;
+  pendingConfigs?: import("../types/dashboard").PendingMonitor[];
   groupName: string;
   displayName: string;
   description?: string | null;
@@ -65,22 +72,8 @@ export interface GroupDashboardData {
  * 获取所有可用的分组名称
  */
 export async function getAvailableGroups(): Promise<string[]> {
-  const allConfigs = await loadProviderConfigsFromDB();
-  const groupSet = new Set<string>();
-
-  for (const config of allConfigs) {
-    if (config.groupName) {
-      groupSet.add(config.groupName);
-    }
-  }
-
-  // 如果存在未分组的配置，也添加到列表
-  const hasUngrouped = allConfigs.some((config) => !config.groupName);
-  if (hasUngrouped) {
-    groupSet.add(UNGROUPED_KEY);
-  }
-
-  return [...groupSet].sort();
+  const configs = await getPublicConfigs();
+  return [...new Set(configs.map((config) => config.group_name || UNGROUPED_KEY))].sort();
 }
 
 /**
@@ -109,7 +102,14 @@ export async function loadGroupDashboardData(
 
   // 分组不存在或没有配置
   if (groupConfigs.length === 0) {
-    return null;
+    const publicConfigs = (await getPublicConfigs()).filter((config) => (config.group_name || UNGROUPED_KEY) === targetGroupName);
+    if (!publicConfigs.length) return null;
+    const snapshot = await getDisplayMonitoringStatistics();
+    return {groupName: targetGroupName, displayName: isTargetUngrouped ? UNGROUPED_DISPLAY_NAME : targetGroupName,
+      description: "本组当前没有启用的检测项，已记录的历史统计仍然保留。", tags: "", providerTimelines: [], total: 0,
+      lastUpdated: null, pollIntervalLabel: getPollingIntervalLabel(), pollIntervalMs: getPollingIntervalMs(),
+      availabilityStats: {}, trendPeriod: options?.trendPeriod ?? "7d", generatedAt: Date.now(),
+      monitoring: {...snapshot, stats: snapshot.stats.filter((row) => row.scopeType === "group" && row.scopeKey === targetGroupName)}};
   }
 
   const maintenanceConfigs = groupConfigs.filter((cfg) => cfg.is_maintenance);
@@ -158,7 +158,10 @@ export async function loadGroupDashboardData(
 
     const generatedAt = Date.now();
     const configIds = groupConfigs.map((config) => config.id);
-    const availabilityStats = await getAvailabilityStats(configIds);
+    const [availabilityStats, snapshot, modelDescriptions, modelGroups] = await Promise.all([getAvailabilityStats(configIds), getDisplayMonitoringStatistics(), getConfiguredModelDescriptions(groupConfigs.map((config) => config.model)), getConfiguredModelGroups(groupConfigs.map((config) => config.model))]);
+    const monitoring = {...snapshot, stats: snapshot.stats.filter((stat) => stat.scopeType === "group" && stat.scopeKey === targetGroupName)};
+    const knownIds = new Set(providerTimelines.map((timeline) => timeline.id));
+    const pendingConfigs = groupConfigs.filter((config) => !knownIds.has(config.id)).map(({id, name, model, groupName}) => ({id, name, model, groupName: groupName ?? null}));
 
     // 获取分组信息（仅对有名分组）
     let websiteUrl: string | undefined | null;
@@ -178,7 +181,11 @@ export async function loadGroupDashboardData(
       tags,
       providerTimelines,
       lastUpdated,
-      total: providerTimelines.length,
+      total: groupConfigs.length,
+      pendingConfigs,
+      monitoring,
+      modelDescriptions,
+      modelGroups,
       pollIntervalLabel,
       pollIntervalMs,
       availabilityStats,

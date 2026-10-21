@@ -19,7 +19,7 @@ const DB_SCHEMA = process.env.DB_SCHEMA ?? "public";
  * 此客户端使用 service_role key，拥有完整的数据库访问权限
  * 仅应在服务端后台任务中使用
  */
-export function createAdminClient() {
+export function createAdminClient(options: {requestTimeoutMs?: number} = {}) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -31,6 +31,16 @@ export function createAdminClient() {
 
   return createSupabaseClient(supabaseUrl, serviceRoleKey, {
     db: { schema: DB_SCHEMA },
+    ...(options.requestTimeoutMs ? {
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, {
+          ...init,
+          signal: init?.signal
+            ? AbortSignal.any([init.signal, AbortSignal.timeout(options.requestTimeoutMs!)])
+            : AbortSignal.timeout(options.requestTimeoutMs!),
+        }),
+      },
+    } : {}),
     auth: {
       autoRefreshToken: false,
       persistSession: false,
