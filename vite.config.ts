@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [vinext(), nitro({
     preset: "vercel",
+    wasm: false,
     vercel: {
       functionRules: {
         "/api/internal/checks/pump": {maxDuration: 55},
