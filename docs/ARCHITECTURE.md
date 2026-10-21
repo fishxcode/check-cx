@@ -6,8 +6,8 @@
 
 Check CX 由三部分组成：
 
-1. **vinext App Router**：在 Cloudflare Worker 上提供 Dashboard 页面与 API 路由。
-2. **外部触发器**：Cloudflare Cron Worker 或其他调度系统调用受保护的检查 API。
+1. **vinext App Router**：通过 Nitro Vercel preset 提供 Dashboard 页面与 API 路由。
+2. **Supabase Cron**：每分钟调用受 Scheduler Token 保护的持久队列 pump。
 3. **Supabase 数据层**：存储配置、历史与统计视图。
 
 核心数据流：
@@ -86,9 +86,9 @@ check_configs → 外部触发 API → check_history → 聚合快照 → API / 
 
 ## 7. 多节点与选主
 
-- Worker 不启动常驻轮询器；每次外部调用检查 API 时尝试获取或续租。
-- 选主由 `check_poller_leases` 表驱动，节点身份来自 `CHECK_NODE_ID`。
-- 未持有租约的调用不重复写入检查结果。
+- Vercel Function 不启动常驻轮询器；Supabase Cron 定时调用 pump。
+- Pump 与任务各自使用数据库 lease；检测历史通过 queue task ID 建立唯一关联。
+- 未持有 pump/task 租约的调用不会重复写入检查结果。
 
 ## 8. 外部触发 API
 
@@ -101,7 +101,7 @@ curl -X POST https://status.fishxcode.com/api/internal/checks/run \
   -d '{"failOnIssues":false}'
 ```
 
-Cloudflare Cron Worker、Uptime Kuma 或其他 API 调度器都可以复用此入口；主站运行时不会自行创建后台定时器。
+Supabase Cron 或其他 API 调度器可以调用受保护的队列 pump；主站运行时不会自行创建后台定时器。部署和队列运维详见 `docs/VERCEL-DEPLOYMENT.md`。
 
 ## 9. 关键约束
 

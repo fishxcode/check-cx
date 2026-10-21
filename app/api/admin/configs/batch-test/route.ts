@@ -1,88 +1,86 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { requireAuth } from "../../alerts/_auth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import type { ProviderConfig, ProviderType } from "@/lib/types";
-import { runChecksForConfigs } from "@/lib/core/config-check-execution";
-import { touchSchedulerToken, verifySchedulerToken } from "@/lib/database/scheduler-tokens";
+import {NextResponse, type NextRequest} from "next/server";
+
+import {requireAuth} from "../../alerts/_auth";
+import {createAdminClient} from "@/lib/supabase/admin";
+import {touchSchedulerToken, verifySchedulerToken} from "@/lib/database/scheduler-tokens";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function POST(request: NextRequest) {
-  let schedulerTokenId: string | null = null;
+async function authorize(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   if (authorization !== null) {
     const match = /^Bearer\s+(\S+)$/i.exec(authorization);
-    const token = match?.[1] ?? "";
-    const tokenRecord = await verifySchedulerToken(token, {requestTimeoutMs: 10_000});
-    if (!tokenRecord) return NextResponse.json({error: "调度 Token 无效、已过期或已停用"}, {status: 401});
-    schedulerTokenId = tokenRecord.id;
-  } else {
-    const sessionError = await requireAuth();
-    if (sessionError) return sessionError;
+    const tokenRecord = await verifySchedulerToken(match?.[1] ?? "", {requestTimeoutMs: 5_000});
+    return tokenRecord
+      ? {tokenRecord, error: null}
+      : {tokenRecord: null, error: NextResponse.json({error: "调度 Token 无效、已过期或已停用"}, {status: 401})};
   }
+  const error = await requireAuth();
+  return {tokenRecord: null, error};
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await authorize(request);
+  if (auth.error) return auth.error;
 
   const body = await request.json().catch(() => null);
   const rawIds: unknown = body && typeof body === "object" && !Array.isArray(body)
     ? (body as {ids?: unknown}).ids : null;
-  if (!Array.isArray(rawIds) || rawIds.length === 0) {
-    return NextResponse.json({error: "ids 不能为空，且必须是 UUID 数组"}, {status: 400});
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 300
+    || rawIds.some((id) => typeof id !== "string" || !UUID.test(id))) {
+    return NextResponse.json({error: "ids 必须是 1–300 个 UUID"}, {status: 400});
   }
-  if (rawIds.length > 300 || !rawIds.every((id): id is string => typeof id === "string" && UUID.test(id))) {
-    return NextResponse.json({error: "ids 必须是有效 UUID，最多支持 300 个"}, {status: 400});
+
+  try {
+    const ids = [...new Set((rawIds as string[]).map((id) => id.toLowerCase()))];
+    const {data, error} = await createAdminClient({requestTimeoutMs: 10_000})
+      .rpc("dispatch_manual_check_queue", {p_ids: ids});
+    if (error) {
+      console.error("[batch-test] 创建检测轮次失败", {code: error.code});
+      if (error.code === "55P03") {
+        return NextResponse.json({error: "已有检测轮次正在运行，请稍后重试"}, {status: 409});
+      }
+      return NextResponse.json({error: "无法创建检测任务，请稍后重试"}, {status: 503});
+    }
+    if (auth.tokenRecord) await touchSchedulerToken(auth.tokenRecord.id).catch(() => {});
+    return NextResponse.json({ok: true, ...data}, {status: 202});
+  } catch (error) {
+    console.error("[batch-test] 创建检测轮次失败", error instanceof Error ? error.message : "未知错误");
+    return NextResponse.json({error: "无法创建检测任务，请稍后重试"}, {status: 503});
   }
-  const ids = [...new Set(rawIds.map((id) => id.toLowerCase()))];
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await authorize(request);
+  if (auth.error) return auth.error;
+
+  const attemptId = request.nextUrl.searchParams.get("attemptId") ?? "";
+  if (!attemptId || attemptId.length > 200) {
+    return NextResponse.json({error: "必须提供有效的 attemptId"}, {status: 400});
+  }
 
   const admin = createAdminClient({requestTimeoutMs: 10_000});
-  const {data, error} = await admin
-    .from("check_configs")
-    .select("id,name,type,model,endpoint,api_key,is_maintenance,request_header,metadata,group_name,stream_mode")
-    .in("id", ids);
+  const {data: run, error: runError} = await admin.from("check_queue_runs")
+    .select("id,attempt_id,status,config_count,completed_count,checked_count,issue_count,error_count,created_at,finished_at")
+    .eq("attempt_id", attemptId).maybeSingle();
+  if (runError) return NextResponse.json({error: "读取任务状态失败"}, {status: 503});
+  if (!run) return NextResponse.json({error: "检测任务不存在"}, {status: 404});
 
-  if (error) return NextResponse.json({error: "读取检测配置失败"}, {status: 503});
-  const foundIds = new Set((data ?? []).map((row) => String(row.id).toLowerCase()));
-  const missingIds = ids.filter((id) => !foundIds.has(id));
-  if (missingIds.length > 0) {
-    return NextResponse.json({error: "部分配置不存在，本次未执行检测", missingIds}, {status: 404});
-  }
+  const {data: tasks, error: taskError} = await admin.from("check_queue_tasks")
+    .select("config_id,kind,status,result")
+    .eq("run_id", run.id)
+    .eq("kind", "check")
+    .eq("status", "completed");
+  if (taskError) return NextResponse.json({error: "读取检测结果失败"}, {status: 503});
 
-  const configs: ProviderConfig[] = (data ?? []).map((d) => ({
-    id: d.id,
-    name: d.name,
-    type: d.type as ProviderType,
-    endpoint: d.endpoint,
-    model: d.model,
-    apiKey: d.api_key,
-    is_maintenance: d.is_maintenance,
-    requestHeaders: (d.request_header as Record<string, string>) || null,
-    metadata: (d.metadata as Record<string, unknown>) || null,
-    groupName: d.group_name || null,
-    streamMode: d.stream_mode || null,
+  const results = Object.fromEntries((tasks ?? []).flatMap((task) => {
+    const result = task.result as {status?: string; latencyMs?: number | null; message?: string | null} | null;
+    return task.config_id && result?.status
+      ? [[task.config_id, {status: result.status, latencyMs: result.latencyMs ?? null, message: result.message ?? null}]]
+      : [];
   }));
 
-  if (schedulerTokenId) {
-    try {
-      await touchSchedulerToken(schedulerTokenId, {requestTimeoutMs: 2_000});
-    } catch {
-      console.error("[batch-test] 更新调度 Token 使用时间失败");
-    }
-  }
-
-  let results;
-  try {
-    results = await runChecksForConfigs(configs, {strictPersistence: true});
-  } catch (error) {
-    console.error("[batch-test] 批量检测失败", error instanceof Error ? error.message : "未知错误");
-    return NextResponse.json({error: "批量检测暂未完成，请稍后重试"}, {status: 503});
-  }
-
-  const resultMap = Object.fromEntries(
-    results.map((r) => [r.id, { status: r.status, latencyMs: r.latencyMs, message: r.message ?? null }])
-  );
-  return NextResponse.json(resultMap, {headers: {
-    "Cache-Control": "no-store",
-    "X-Check-Execution-Mode": "sync",
-    "X-Check-Requested-Count": String(ids.length),
-    "X-Check-Result-Count": String(results.length),
-  }});
+  return NextResponse.json({run, results}, {headers: {"Cache-Control": "no-store"}});
 }

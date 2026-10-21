@@ -1,17 +1,15 @@
-import { cloudflare } from "@cloudflare/vite-plugin";
-import { kvDataAdapter } from "@vinext/cloudflare/cache/kv-data-adapter";
+import { nitro } from "nitro/vite";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [
-    vinext({
-      cache: {
-        data: kvDataAdapter(),
+  plugins: [vinext(), nitro({
+    preset: "vercel",
+    vercel: {
+      functionRules: {
+        "/api/internal/checks/pump": {maxDuration: 55},
+        "/api/cron/check": {maxDuration: 55},
       },
-    }),
-    cloudflare({
-      viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-    }),
-  ],
+    },
+  })],
 });

@@ -1,6 +1,6 @@
 # Check CX
 
-Check CX 是一个基于 vinext、Cloudflare Workers 与 Supabase 的 AI 模型 API 可用性与延迟监控面板。健康检查由受 Scheduler Token 保护的外部触发 API 按需执行，并提供可视化 Dashboard 与只读状态 API。
+Check CX 是一个基于 vinext、Vercel 与 Supabase 的 AI 模型 API 可用性与延迟监控面板。健康检查由 Supabase 持久队列驱动，并提供可视化 Dashboard 与只读状态 API。
 
 ![Check CX Dashboard](docs/images/index.png)
 
@@ -21,7 +21,7 @@ Check CX 是一个基于 vinext、Cloudflare Workers 与 Supabase 的 AI 模型 
 - Node.js 22.12 及以上（用于本地 Vite/vinext 工具链）
 - pnpm 10
 - Supabase 项目（PostgreSQL）
-- Cloudflare Workers 项目与 Wrangler 登录状态
+- Vercel 项目
 
 ### 2. 安装依赖
 
@@ -77,38 +77,13 @@ pnpm dev
 
 ```bash
 pnpm dev       # 本地 Vite/vinext 开发
-pnpm preview   # Wrangler 本地 Worker 预览
-pnpm run deploy # 构建并部署到 Cloudflare Workers
 pnpm check     # vinext 兼容性检查
 pnpm lint      # 代码检查
 ```
 
-Cloudflare 部署前，将运行时配置写入 Wrangler secrets/vars。主站不再使用 Next standalone、Docker 或 Vercel 部署。
+将 Git 仓库导入 Vercel，配置 `.env.example` 中必需的 Supabase 服务端变量后部署。Vercel 使用 Nitro preset 输出应用；检测运行在数据库持久队列中，每次函数调用只处理有限任务，后续由下一次调度继续。
 
-```bash
-wrangler secret put SUPABASE_URL
-wrangler secret put SUPABASE_PUBLISHABLE_OR_ANON_KEY
-wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-wrangler secret put CRON_SECRET
-wrangler secret put INTERNAL_METRICS_TOKEN
-
-# Cron trigger Worker 的调用密钥（在 worker 配置目录下执行）
-cd worker
-wrangler secret put SCHEDULER_TOKEN
-```
-
-GitHub Actions 会在主站发布后同步发布 `worker/` 下的 Cron trigger Worker；首次部署前仍需手动写入该 Worker 的 `SCHEDULER_TOKEN` Secret。
-
-外部调度器通过 `POST /api/internal/checks/run` 触发检测，使用 Scheduler Token：
-
-```bash
-curl -X POST https://<your-worker-domain>/api/internal/checks/run \
-  -H "Authorization: Bearer <scheduler-token>" \
-  -H "Content-Type: application/json" \
-  -d '{"failOnIssues":false}'
-```
-
-主站 Worker 不维持常驻轮询器；检测和官方状态刷新均由该受保护 API 按需执行。
+生产数据库迁移、Vercel 环境变量、Supabase 每分钟 Cron 和回滚流程见 [`docs/VERCEL-DEPLOYMENT.md`](docs/VERCEL-DEPLOYMENT.md)。不要使用 Vercel Hobby Cron 代替每分钟调度。
 
 ## 配置说明
 
@@ -146,6 +121,7 @@ curl -X POST https://<your-worker-domain>/api/internal/checks/run \
 
 - 架构说明：`docs/ARCHITECTURE.md`
 - 运维手册：`docs/OPERATIONS.md`
+- Vercel 部署与持久检测队列：`docs/VERCEL-DEPLOYMENT.md`
 - Provider 扩展：`docs/EXTENDING_PROVIDERS.md`
 
 ## 许可证

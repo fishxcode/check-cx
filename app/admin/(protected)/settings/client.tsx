@@ -485,7 +485,7 @@ export function SettingsClient({ envVars }: SettingsPageProps) {
           <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">调度 API Token</p>
-            <p className="text-xs text-muted-foreground mt-0.5">供 Uptime Kuma、Cloudflare Cron 等外部调度器调用内部批量检测接口</p>
+            <p className="text-xs text-muted-foreground mt-0.5">供 Supabase Cron 等外部调度器调用内部批量检测接口</p>
           </div>
         </div>
         <div className="space-y-4 p-4">

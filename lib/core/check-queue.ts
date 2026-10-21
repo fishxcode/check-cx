@@ -14,7 +14,7 @@ interface QueueTask {
   kind: "check" | "alerts" | "alert" | "finish" | "summary" | "official" | "prune";
   config_id: string | null;
   status: "pending" | "running" | "completed" | "failed";
-  payload: {result?: CheckResult; ruleId?: string; channelId?: string};
+  payload: {result?: CheckResult; ruleId?: string; channelId?: string; manual?: boolean};
 }
 interface ChildTask {
   key: string;
@@ -23,13 +23,20 @@ interface ChildTask {
 }
 interface TaskCompletion {retry: boolean; tasks: string[]; failed?: boolean}
 
+export function getCheckQueueConcurrency(): number {
+  const configured = Number.parseInt(process.env.CHECK_CONCURRENCY ?? "8", 10);
+  return Number.isFinite(configured) ? Math.min(20, Math.max(1, configured)) : 8;
+}
+
 /** 消息只携带 ID；执行状态及后续任务以数据库事务为准。 */
-export async function dispatchCheckQueue(event: string): Promise<{tasks: string[]; attemptId: string; intervalSeconds: number}> {
+export async function dispatchCheckQueue(event: string): Promise<{tasks: string[]; queuedCount: number; attemptId: string; intervalSeconds: number}> {
   const {data, error} = await createAdminClient({requestTimeoutMs: 10_000}).rpc("dispatch_check_queue", {
     p_attempt_id: null, p_event: event, p_interval_seconds: null,
+    p_max_tasks: getCheckQueueConcurrency(),
   });
   if (error) throw new Error(`创建检测计划失败：${error.code}`);
-  return data as {tasks: string[]; attemptId: string; intervalSeconds: number};
+  const plan = data as {tasks: string[]; queuedCount?: number; attemptId: string; intervalSeconds: number};
+  return {...plan, queuedCount: plan.queuedCount ?? plan.tasks.length};
 }
 
 export async function executeCheckQueueTask(taskId: string): Promise<TaskCompletion> {
@@ -58,7 +65,7 @@ export async function executeCheckQueueTask(taskId: string): Promise<TaskComplet
   try {
     switch (task.kind) {
       case "check": {
-        const config = await loadCurrentConfig(task.config_id!, admin);
+        const config = await loadCurrentConfig(task.config_id!, admin, task.payload.manual === true);
         const result = config ? await checkWithAiSdk(config, {maxRetries: 0}) : null;
         return await complete(result, []);
       }
@@ -115,13 +122,17 @@ export async function executeCheckQueueTask(taskId: string): Promise<TaskComplet
   }
 }
 
-async function loadCurrentConfig(id: string, admin: ReturnType<typeof createAdminClient>): Promise<ProviderConfig | null> {
+async function loadCurrentConfig(
+  id: string,
+  admin: ReturnType<typeof createAdminClient>,
+  allowDisabled = false
+): Promise<ProviderConfig | null> {
   const {data: row, error} = await admin.from("check_configs")
     .select("id,name,type,model,endpoint,api_key,enabled,sync_disabled,is_maintenance,request_header,metadata,group_name,stream_mode,paused_until,latency_threshold_ms")
     .eq("id", id).maybeSingle();
   if (error) throw new Error(`读取检测配置失败：${error.code}`);
-  if (!row || !row.enabled || row.sync_disabled || row.is_maintenance
-    || (row.paused_until && Date.parse(row.paused_until) > Date.now())) return null;
+  if (!row || (!allowDisabled && (!row.enabled || row.sync_disabled || row.is_maintenance
+    || (row.paused_until && Date.parse(row.paused_until) > Date.now())))) return null;
   return {
     id: row.id, name: row.name, type: row.type as ProviderConfig["type"],
     model: row.model, endpoint: row.endpoint, apiKey: row.api_key,

@@ -84,6 +84,7 @@ export default function ConfigsPage() {
   const [testResults, setTestResults]   = useState<Record<string, TestResult>>({});
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState("");
   // 扩展功能对话框状态
   const [exportOpen, setExportOpen]     = useState(false);
   const [importOpen, setImportOpen]     = useState(false);
@@ -505,17 +506,31 @@ export default function ConfigsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      const resultMap: Record<string, { status: string; latencyMs: number | null; message: string | null }> =
-        res.ok ? await res.json() : {};
-      setTestResults((prev) => ({ ...prev, ...resultMap }));
-    } catch {
-      setTestResults((prev) => ({
-        ...prev,
-        ...Object.fromEntries(ids.map((id) => [id, { status: "error", latencyMs: null, message: "请求失败" }])),
-      }));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "无法创建检测任务");
+      setBatchProgress(`队列中 0/${ids.length}，等待检测`);
+
+      let status = "running";
+      while (status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const progressResponse = await fetch(`/api/admin/configs/batch-test?attemptId=${encodeURIComponent(data.attemptId)}`);
+          const progress = await progressResponse.json();
+          if (!progressResponse.ok) throw new Error(progress.error || "读取检测进度失败");
+          status = progress.run.status;
+          setBatchProgress(`已完成 ${progress.run.completed_count}/${progress.run.config_count}`);
+          setTestResults((prev) => ({ ...prev, ...progress.results }));
+        } catch {
+          setBatchProgress("进度读取暂不可用，正在重试；后台任务仍会继续");
+        }
+      }
+      setMsg(status === "success" ? "批量检测完成" : "批量检测结束，部分配置异常或任务失败");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "批量检测失败");
     } finally {
       setTestLoading((prev) => { const next = { ...prev }; ids.forEach((id) => delete next[id]); return next; });
       setBatchRunning(false);
+      setBatchProgress("");
     }
   }
 
@@ -533,7 +548,12 @@ export default function ConfigsPage() {
   }
 
   function toggleSelect(id: string) {
-    setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   return (
@@ -592,6 +612,7 @@ export default function ConfigsPage() {
               {batchRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
               批量检测
             </button>
+            {batchProgress && <span className="text-xs text-muted-foreground">{batchProgress}</span>}
             <DropdownMenu><DropdownMenuTrigger asChild><button disabled={batchRunning} className="rounded-md border px-3 py-1.5 text-xs">上游同步</button></DropdownMenuTrigger><DropdownMenuContent>
               <DropdownMenuItem onClick={() => handleSync("enable")}>纳入自动同步</DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleSync("disable")}>取消自动同步</DropdownMenuItem>

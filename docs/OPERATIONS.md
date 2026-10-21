@@ -4,9 +4,10 @@
 
 ## 1. 运行环境
 
-- Node.js 18 及以上（建议 20 LTS）
+- Node.js 22.12 及以上
 - pnpm 10
 - Supabase（PostgreSQL）
+- Vercel（Nitro preset）
 
 ## 2. 环境变量
 
@@ -50,23 +51,23 @@
 
 ## 4. 部署模式
 
-### 4.1 主站 Worker
+### 4.1 Vercel 应用
 
-- 主站部署为 Cloudflare Worker，提供页面和 API，不运行常驻定时器。
-- 使用 `pnpm deploy` 发布；运行时环境变量和 Secrets 通过 Wrangler 配置。
+- 应用部署到 Vercel，服务端 Supabase 凭据放在 Vercel Project Environment Variables。
+- 运行时不启动常驻轮询器；状态与待处理任务保存在 Supabase。
 
-### 4.2 外部触发器
+### 4.2 定时触发
 
-- Cloudflare Cron Worker 或其他调度系统调用 `POST /api/internal/checks/run`。
-- 请求使用 `Authorization: Bearer <Scheduler Token>` 鉴权。
-- 调用方可传 `{"ids":[...]}` 只检查指定配置，或省略 `ids` 检查全部启用配置。
-- 仓库内 Cron Worker 的公开手动 GET 入口同样要求 Scheduler Token；Cron 事件不经过该公开入口。
+- Supabase Cron 每分钟调用 `POST /api/internal/checks/pump`，使用后台 Scheduler Token 认证。
+- Pump 通过数据库租约防止并行实例重复消费；每次只处理有限任务，剩余任务由后续触发继续。
+- `POST /api/internal/checks/run` 可创建自动检测轮次，或传 `{"ids":[...]}` 创建指定配置的手动轮次；返回 `202` 表示成功入队，不代表所有检测已结束。
+- Vault secrets、Cron SQL、观察进度和回滚见 `docs/VERCEL-DEPLOYMENT.md`。
 
-### 4.3 多节点
+### 4.3 多节点与恢复
 
-- 使用 `check_poller_leases` 表进行租约选主。
-- 多个触发请求可能同时到达，但只有持有租约的请求执行检查；其他请求不重复写入。
-- 必须为每个节点设置唯一 `CHECK_NODE_ID`，避免租约冲突。
+- `check_queue_pump_lease` 控制单个 pump 执行权；每个队列任务另有独立租约和幂等历史关联。
+- 函数中断后，任务 lease 到期后可重新领取；不要手工删除队列表或运行中任务。
+- 切换调度器或回滚前先关闭 Supabase Cron，避免两个系统并行触发。
 
 ## 5. 运维操作
 
