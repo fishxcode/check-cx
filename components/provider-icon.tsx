@@ -1,13 +1,21 @@
 "use client";
 
-import {Anthropic, Gemini, Grok, OpenAI} from "@lobehub/icons";
+import Anthropic from "@lobehub/icons/es/Anthropic";
+import Gemini from "@lobehub/icons/es/Gemini";
+import Grok from "@lobehub/icons/es/Grok";
+import OpenAI from "@lobehub/icons/es/OpenAI";
+import type {ComponentType} from "react";
 
 import type {ProviderType} from "@/lib/types";
 import {cn} from "@/lib/utils";
 
+/**
+ * 图标按子路径单独引入，不走包根 barrel：根入口会 re-export `features`，
+ * 其中 ProviderCombine 依赖可选 peer `antd`，未安装时服务端环境打包会失败。
+ */
 const ICON_MAP: Record<
   ProviderType,
-  React.ComponentType<{ className?: string; size?: number }>
+  ComponentType<{ className?: string; size?: number }>
 > = {
   openai: OpenAI,
   gemini: Gemini,
