@@ -9,7 +9,7 @@
 
 ## 1. 部署应用
 
-将 `master` 导入 Vercel，保持默认 Vite 项目检测，并在 Production、Preview 环境配置：
+将 `master` 导入 Vercel。仓库内 `vercel.json` 明确使用 Nitro framework 和 Nitro build；如果 Vercel 项目设置仍强制选择 `Next.js`，请改为 `Nitro`（或清除强制的 Next.js preset）。不要为通过检测安装真正的 `next` 依赖，vinext 自己提供 `next/*` 兼容层。在 Production、Preview 环境配置：
 
 | 变量 | 用途 |
 | --- | --- |
@@ -63,7 +63,7 @@ select cron.schedule(
 ## 4. 手动触发和恢复
 
 - 后台批量检测会立即创建持久 run，前端轮询状态并显示 `completed_count/config_count`；已有检测轮次时返回冲突，避免同时压测同一批配置。继续处理由每分钟 Cron 执行。
-- 外部系统可 `POST /api/internal/checks/run`，无 `ids` 时触发计划轮次，带 `ids` 时创建指定配置的手动 run；响应 `202` 仅表示任务已入队。
+- 外部系统可 `POST /api/internal/checks/run`，不传 `ids` 时立即创建全部启用配置的手动 run，带 `ids` 时创建指定配置的手动 run；接口会在当前请求预算内立即推进一批，其余任务由每分钟 Cron 续跑。响应 `202` 不代表整轮已完成。
 - Pump 具有数据库级执行租约；同一时刻只有一个 pump 执行。任务有独立租约，函数被终止后，检测任务会在 lease 过期并经过 3 分钟重复投递保护窗口后被重新领取；后续任务在 lease 过期后即可重投。
 - 暂停调度时禁用 `check-cx-queue-pump` Cron job；不删除队列表或任务数据。恢复时重新启用 Cron，pending 和过期 lease 的任务会继续推进。
 - 回滚应用时保留新增数据库对象；切换回旧调度前先禁用 Supabase Cron，确保不会有两个 scheduler 同时写入。

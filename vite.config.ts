@@ -8,6 +8,7 @@ export default defineConfig({
     vercel: {
       functionRules: {
         "/api/internal/checks/pump": {maxDuration: 55},
+        "/api/internal/checks/run": {maxDuration: 55},
         "/api/cron/check": {maxDuration: 55},
       },
     },

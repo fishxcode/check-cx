@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /out/
+/.vercel/
 
 # vinext / Vite / Cloudflare
 /.vinext/
