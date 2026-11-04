@@ -53,6 +53,23 @@ interface TestResult {
   message: string | null;
 }
 
+interface UpstreamDiff {
+  type: string;
+  endpoint: string;
+  groupName: string | null;
+  toCreate: string[];
+  missing: string[];
+  presentCount: number;
+  unavailable: boolean;
+  createBase: {
+    request_header: unknown;
+    metadata: unknown;
+    stream_mode: "stream" | "generate" | null;
+    enabled: boolean;
+    is_maintenance: boolean;
+  };
+}
+
 const TEST_STATUS_STYLES: Record<string, string> = {
   operational:       "bg-green-500/10 text-green-600",
   degraded:          "bg-yellow-500/10 text-yellow-600",
@@ -85,6 +102,9 @@ export default function ConfigsPage() {
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState("");
+  // 补齐上游新增模型对话框
+  const [upstreamOpen, setUpstreamOpen] = useState(false);
+  const [upstreamDiffs, setUpstreamDiffs] = useState<UpstreamDiff[]>([]);
   // 扩展功能对话框状态
   const [exportOpen, setExportOpen]     = useState(false);
   const [importOpen, setImportOpen]     = useState(false);
@@ -125,6 +145,35 @@ export default function ConfigsPage() {
         setMsg(result.results.length ? result.results.map((item: {name: string; state: string; missingCount: number; syncDisabled: boolean; groupDifference?: {configured: string; availableGroups: string[]}}) => `${item.name}：${labels[item.state]}，已确认缺失 ${item.missingCount} 次${item.syncDisabled ? "，同步停用" : ""}${item.groupDifference ? `；公开目录中的分组与当前配置不一致（${item.groupDifference.availableGroups.join("、")}），请确认密钥路由后调整分组` : ""}`).join("；") : "没有到期的同步配置；观测至少间隔 5 分钟，请先纳入同步。");
       } else setMsg(`已更新 ${result.updated} 条同步配置，锁定配置跳过。`);
       await load();
+    } catch (error) { setMsg(error instanceof Error ? error.message : "同步失败"); }
+    finally { setBatchRunning(false); }
+  }
+
+  async function handleSyncUpstream(action: "preview" | "apply") {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBatchRunning(true);
+    setMsg("");
+    try {
+      const response = await fetch("/api/admin/configs/sync-upstream", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids, action})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "同步失败");
+      if (action === "preview") {
+        const diffs = (result.diffs ?? []) as UpstreamDiff[];
+        const usable = diffs.filter((d) => !d.unavailable);
+        if (diffs.length === 0 || usable.length === 0) {
+          setMsg("无法获取上游模型目录，请确认中转站可访问后再试");
+        } else if (usable.every((d) => d.toCreate.length === 0 && d.missing.length === 0)) {
+          setMsg("上游与本地模型一致，没有需要补齐的新增模型");
+        } else {
+          setUpstreamDiffs(diffs);
+          setUpstreamOpen(true);
+        }
+      } else {
+        setMsg(`已补齐新增 ${result.created} 个模型配置${result.disabled ? `，停用上游已移除的 ${result.disabled} 条` : ""}${result.unavailable ? "；部分来源目录不可用" : ""}`);
+        setUpstreamOpen(false);
+        await load();
+      }
     } catch (error) { setMsg(error instanceof Error ? error.message : "同步失败"); }
     finally { setBatchRunning(false); }
   }
@@ -624,6 +673,8 @@ export default function ConfigsPage() {
               <DropdownMenuItem onClick={() => handleSync("disable")}>取消自动同步</DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleSync("preview")}>预览目录（不写入）</DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleSync("sync")}>立即同步到期配置</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleSyncUpstream("preview")}>补齐上游新增模型</DropdownMenuItem>
             </DropdownMenuContent></DropdownMenu>
             {/* 设置型批量操作收进下拉，避免按钮过多 */}
             <DropdownMenu>
@@ -988,6 +1039,36 @@ export default function ConfigsPage() {
             <Input id="lock-reason" value={lockReason} onChange={(e) => setLockReason(e.target.value)} placeholder="填写操作原因，便于审计追溯" />
           </div>
         </div>
+      </CrudDialog>
+
+      {/* 补齐上游新增模型 */}
+      <CrudDialog open={upstreamOpen} onOpenChange={setUpstreamOpen} title="补齐上游新增模型" onSubmit={() => handleSyncUpstream("apply")} loading={batchRunning}>
+        <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+          {upstreamDiffs.map((d, i) => (
+            <div key={i} className="rounded-md border border-border p-3 space-y-1 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium truncate">{d.type.toUpperCase()} · {d.endpoint}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{d.groupName ? `分组：${d.groupName}` : "无分组"}</span>
+              </div>
+              {d.unavailable ? (
+                <p className="text-xs text-destructive">上游目录不可用，无法对比</p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    将新增 <strong className="text-primary">{d.toCreate.length}</strong> · 已存在 {d.presentCount} · 上游移除 <strong className={d.missing.length ? "text-destructive" : ""}>{d.missing.length}</strong>
+                  </p>
+                  {d.toCreate.length > 0 && (
+                    <p className="text-xs text-muted-foreground break-all">新增：{d.toCreate.join("、")}</p>
+                  )}
+                  {d.missing.length > 0 && (
+                    <p className="text-xs text-destructive break-all">上游移除：{d.missing.join("、")}</p>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground pt-2">确认后创建新增模型的配置（继承所选来源的类型/端点/分组/请求头等字段），并停用上游已移除且已纳入自动同步的配置。</p>
       </CrudDialog>
     </div>
   );
