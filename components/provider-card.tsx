@@ -2,19 +2,17 @@
 
 import {useEffect, useState} from "react";
 import Link from "next/link";
-import {Loader2, Play, Radio, Wrench, Zap} from "lucide-react";
+import {Loader2, Play, Radio, Wrench, Zap, Clock} from "lucide-react";
 
 import {ProviderIcon} from "@/components/provider-icon";
 import {StatusTimeline} from "@/components/status-timeline";
 import {AvailabilityStats} from "@/components/availability-stats";
 import {Badge} from "@/components/ui/badge";
-import {HoverCard, HoverCardContent, HoverCardTrigger} from "@/components/ui/hover-card";
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline} from "@/lib/types";
-import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/status";
-import {ClientTime} from "@/components/client-time";
+import type {PendingMonitor} from "@/lib/types/dashboard";
+import {STATUS_META} from "@/lib/core/status";
 import {loadConfigState} from "@/lib/utils/admin-config-state";
 import {cn} from "@/lib/utils";
-import {useMonitoringDisplay} from "@/components/monitoring-display-context";
 import {getModelPath} from "@/lib/utils/model-slug";
 import {SourceGroupLabel} from "@/components/source-group-label";
 
@@ -55,13 +53,8 @@ export function ProviderCard({
   selectedPeriod,
 }: ProviderCardProps) {
   const { id, latest, items } = timeline;
-  const {descriptions} = useMonitoringDisplay();
   const preset = STATUS_META[latest.status];
   const isMaintenance = latest.status === "maintenance";
-  const officialStatus = latest.officialStatus;
-  const officialStatusMeta = officialStatus
-    ? OFFICIAL_STATUS_META[officialStatus.status]
-    : null;
 
   // 管理员身份探测：调轻量 admin API，200 为管理员（显示管理控件）
   const [isAdmin, setIsAdmin] = useState(false);
@@ -163,20 +156,11 @@ export function ProviderCard({
                   {preset.label}
                 </Badge>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-muted-foreground/80">
-                  {PROVIDER_LABEL[latest.type]}
-                </span>
-                <Link href={getModelPath(latest.model)} className="relative z-20 break-all font-mono opacity-70 transition-colors hover:text-foreground hover:opacity-100">
-                  {latest.model}
-                </Link>
-              </div>
             </div>
           </div>
         </div>
 
         <SourceGroupLabel modelName={latest.model} groupName={latest.groupName} className="mt-1" />
-        {descriptions[latest.model] && <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" title={descriptions[latest.model]}>{descriptions[latest.model]}</p>}
 
         <div className="mb-3 grid grid-cols-2 gap-2.5">
           <div className="rounded-lg bg-muted/30 p-2 transition-colors group-hover:bg-muted/50">
@@ -200,75 +184,7 @@ export function ProviderCard({
           </div>
         </div>
 
-        <div className="space-y-2.5 border-t border-border/30 pt-3">
-          {/* Official Status Row */}
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">官方状态</span>
-            {officialStatus && officialStatusMeta ? (
-              <HoverCard
-                openDelay={isCoarsePointer ? 0 : 200}
-                open={isCoarsePointer ? activeOfficialCardId === id : undefined}
-                onOpenChange={
-                  isCoarsePointer
-                    ? (nextOpen) => setActiveOfficialCardId(nextOpen ? id : null)
-                    : undefined
-                }
-              >
-                <HoverCardTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-muted",
-                      officialStatusMeta.color.replace("text-", "bg-")
-                    )}
-                    onClick={
-                      isCoarsePointer
-                        ? () =>
-                            setActiveOfficialCardId(
-                              activeOfficialCardId === id ? null : id
-                            )
-                        : undefined
-                    }
-                  >
-                    <span
-                      className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        officialStatusMeta.color.replace("text-", "bg-")
-                      )}
-                    />
-                    {officialStatusMeta.label}
-                  </button>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-80 space-y-3 backdrop-blur-xl bg-background/95">
-                  <div className="flex items-start justify-between gap-2">
-                    <h4 className="font-semibold text-foreground">
-                      {officialStatusMeta.label}
-                    </h4>
-                    <span className="text-xs text-muted-foreground">
-                      <ClientTime value={officialStatus.checkedAt} /> 更新
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground break-words">
-                    {officialStatus.message || "暂无官方说明"}
-                  </p>
-                  {officialStatus.affectedComponents &&
-                    officialStatus.affectedComponents.length > 0 && (
-                      <div className="rounded-md bg-muted/50 p-2 text-xs">
-                        <p className="mb-1.5 font-medium text-foreground">受影响组件</p>
-                        <ul className="list-inside list-disc space-y-0.5 text-muted-foreground">
-                          {officialStatus.affectedComponents.map((component, index) => (
-                            <li key={`${component}-${index}`}>{component}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                </HoverCardContent>
-              </HoverCard>
-            ) : (
-              <span className="text-xs text-muted-foreground/40">—</span>
-            )}
-          </div>
-
+        <div className="border-t border-border/30 pt-3">
           <div className="relative z-20"><AvailabilityStats stats={availabilityStats} period={selectedPeriod} isMaintenance={isMaintenance} /></div>
         </div>
       </div>
@@ -278,5 +194,63 @@ export function ProviderCard({
         <StatusTimeline items={items} nextRefreshInMs={timeToNextRefresh} isMaintenance={isMaintenance} />
       </div>
     </div>
+  );
+}
+
+/** 待检测模型的卡片：结构与 ProviderCard 完全对齐，缺失数据用占位符表示。 */
+export function ProviderPendingCard({config, selectedPeriod}: {config: PendingMonitor; selectedPeriod: AvailabilityPeriod}) {
+  return (
+    <Link
+      href={getModelPath(config.model)}
+      className="group relative isolate flex flex-col overflow-hidden rounded-2xl border border-dashed border-border/60 bg-background/40 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/40 focus-visible:outline-none"
+    >
+      <div className="flex-1 p-3 sm:p-4">
+        <div className="mb-3 flex items-start justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground/70 sm:h-10 sm:w-10">
+              <Clock className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex-1 truncate text-sm font-bold leading-none tracking-tight text-foreground sm:text-base">
+                  {config.name}
+                </h3>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                  待检测
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <SourceGroupLabel modelName={config.model} groupName={config.groupName} linkChannel={false} className="mt-1" />
+
+        <div className="mb-3 grid grid-cols-2 gap-2.5">
+          <div className="rounded-lg bg-muted/30 p-2">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Zap className="h-3 w-3" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider">对话延迟</span>
+            </div>
+            <div className="mt-1 w-fit font-mono text-base font-medium leading-none text-muted-foreground/50">—</div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-2">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Radio className="h-3 w-3" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider">端点 PING</span>
+            </div>
+            <div className="mt-1 w-fit font-mono text-base font-medium leading-none text-muted-foreground/50">—</div>
+          </div>
+        </div>
+
+        <div className="border-t border-border/30 pt-3">
+          <AvailabilityStats stats={null} period={selectedPeriod} isMaintenance={false} />
+        </div>
+      </div>
+
+      <div className="relative z-20 border-t border-border/40 bg-muted/10 px-4 py-3">
+        <p className="text-xs text-muted-foreground">尚无检测记录，等待定时检测</p>
+      </div>
+    </Link>
   );
 }

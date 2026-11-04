@@ -50,7 +50,7 @@ import {MonitoringSummary} from "@/components/monitoring-summary";
 import type {MonitoringSnapshot} from "@/lib/types/monitoring";
 import {GroupTags} from "@/components/group-tags";
 import {GlobalGroupHealthPanel} from "@/components/global-group-health-panel";
-import {ProviderCard} from "@/components/provider-card";
+import {ProviderCard, ProviderPendingCard} from "@/components/provider-card";
 import {ProviderListItem} from "@/components/provider-list-item";
 import {ThemeToggle} from "@/components/theme-toggle";
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
@@ -316,9 +316,6 @@ function GroupPanel({
               <GroupTags tags={group.tags} />
 
             </div>
-            {group.description && (
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{group.description}</p>
-            )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <span>{modelCount} 个模型 · {group.timelines.length + group.pendingConfigs.length} 个监控项</span>
               {group.pendingConfigs.length > 0 && <span>{group.pendingConfigs.length} 待检测</span>}
@@ -388,16 +385,7 @@ function GroupPanel({
         {group.pendingConfigs.length > 0 && (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {group.pendingConfigs.map((config) => (
-              <Link key={config.id} href={getModelPath(config.model)} className="block rounded-xl border border-border/50 p-4 transition hover:border-primary/40 hover:bg-muted/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{config.name}</span>
-                  <span className="text-xs text-muted-foreground">待检测</span>
-                </div>
-                <p className="mt-1 break-all text-sm text-muted-foreground">{config.model}</p>
-                {modelDescriptions?.[config.model] && <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{modelDescriptions[config.model]}</p>}
-                <SourceGroupLabel modelName={config.model} groupName={config.groupName} linkChannel={false} />
-                <p className="mt-2 text-xs text-muted-foreground">尚无检测记录，等待定时检测</p>
-              </Link>
+              <ProviderPendingCard key={config.id} config={config} selectedPeriod={selectedPeriod} />
             ))}
           </div>
         )}

@@ -25,14 +25,26 @@ export function MonitoringSummary({snapshot, scopeType, scopeKey, period, compac
     ["平均首字延迟", metricValue(stat?.meanLatencyMs, " ms")],
     ["P95 首字延迟", metricValue(stat?.p95LatencyMs, " ms")],
   ].filter((_, index) => snapshot.showSla !== false || index > 1);
-  return <section aria-label="窗口统计" className="space-y-3">
-    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">{values.map(([label, value]) => <div key={label} className="min-w-0 rounded-xl border border-border/60 bg-card p-4">
-      <dt className="text-xs text-muted-foreground">{label}</dt><dd className={`mt-2 font-semibold tabular-nums ${compact ? "text-lg" : "text-2xl sm:text-3xl"}`}>{value}</dd>
-    </div>)}</dl>
-    <div className="text-xs leading-6 text-muted-foreground"><p>{stat?.totalChecks ? `${stat.totalChecks.toLocaleString("zh-CN")} 次探测 · ${stat.latencySampleCount.toLocaleString("zh-CN")} 个有效延迟样本` : "所选窗口暂无探测样本"}。{snapshot.showSla !== false && "可用率按探测次数计算，非按持续时间计算的 SLA；维护不计入。"}</p>
-      {!compact && stat?.firstSampleAt && stat.lastSampleAt && <p>样本覆盖：<ClientTime value={stat.firstSampleAt} /> 至 <ClientTime value={stat.lastSampleAt} />，期间可能缺测。</p>}
-      {!compact && !!stat?.inferredAttributionCount && <p>部分记录按迁移或写入时配置归属统计。</p>}
-    </div>
+  return <section aria-label="窗口统计" className={compact ? "" : "space-y-3"}>
+    {compact ? (
+      // 分组内紧凑展示：一行小标签，避免大卡与说明段落堆叠
+      <dl className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {values.map(([label, value]) => (
+          <div key={label} className="flex items-baseline gap-1.5">
+            <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
+            <dd className="whitespace-nowrap font-semibold tabular-nums text-sm text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    ) : (
+      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">{values.map(([label, value]) => <div key={label} className="min-w-0 rounded-xl border border-border/60 bg-card p-4">
+        <dt className="text-xs text-muted-foreground">{label}</dt><dd className={`mt-2 font-semibold tabular-nums ${compact ? "text-lg" : "text-2xl sm:text-3xl"}`}>{value}</dd>
+      </div>)}</dl>
+    )}
+    {!compact && <div className="text-xs leading-6 text-muted-foreground"><p>{stat?.totalChecks ? `${stat.totalChecks.toLocaleString("zh-CN")} 次探测 · ${stat.latencySampleCount.toLocaleString("zh-CN")} 个有效延迟样本` : "所选窗口暂无探测样本"}。{snapshot.showSla !== false && "可用率按探测次数计算，非按持续时间计算的 SLA；维护不计入。"}</p>
+      {stat?.firstSampleAt && stat.lastSampleAt && <p>样本覆盖：<ClientTime value={stat.firstSampleAt} /> 至 <ClientTime value={stat.lastSampleAt} />，期间可能缺测。</p>}
+      {!!stat?.inferredAttributionCount && <p>部分记录按迁移或写入时配置归属统计。</p>}
+    </div>}
   </section>;
 }
 
