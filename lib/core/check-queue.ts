@@ -25,7 +25,7 @@ interface TaskCompletion {retry: boolean; tasks: string[]; failed?: boolean}
 
 export function getCheckQueueConcurrency(): number {
   const configured = Number.parseInt(process.env.CHECK_CONCURRENCY ?? "8", 10);
-  return Number.isFinite(configured) ? Math.min(20, Math.max(1, configured)) : 8;
+  return Number.isFinite(configured) ? Math.min(200, Math.max(1, configured)) : 8;
 }
 
 /** 消息只携带 ID；执行状态及后续任务以数据库事务为准。 */

@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const rawIds: unknown = body && typeof body === "object" && !Array.isArray(body)
     ? (body as {ids?: unknown}).ids : null;
-  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 300
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 5000
     || rawIds.some((id) => typeof id !== "string" || !UUID.test(id))) {
-    return NextResponse.json({error: "ids 必须是 1–300 个 UUID"}, {status: 400});
+    return NextResponse.json({error: "ids 必须是 1–5000 个 UUID"}, {status: 400});
   }
 
   try {
