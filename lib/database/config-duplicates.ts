@@ -37,3 +37,35 @@ export async function checkConfigDuplicate(
   }
   return { duplicate: false, error: false };
 }
+
+/**
+ * 批量新增时按模型粒度去重：返回请求中"已存在（应跳过）"与"可新增"的模型。
+ * 供 batch-create 使用，使其跳过重复项、继续添加非重复项，而不是整批拒绝。
+ */
+export async function filterDuplicateModels(
+  admin: ReturnType<typeof createAdminClient>,
+  identity: ConfigIdentity,
+): Promise<{ duplicateModels: string[]; insertableModels: string[]; error: boolean }> {
+  const existing = new Set<string>();
+  // 分段查询，避免批量模型较多时超过请求 URL 长度限制。
+  for (let offset = 0; offset < identity.models.length; offset += 50) {
+    let query = admin
+      .from("check_configs")
+      .select("model")
+      .eq("type", identity.type)
+      .eq("endpoint", identity.endpoint)
+      .eq("api_key", identity.api_key)
+      .in("model", identity.models.slice(offset, offset + 50));
+
+    query = identity.group_name
+      ? query.eq("group_name", identity.group_name)
+      : query.or("group_name.is.null,group_name.eq.");
+
+    const { data, error } = await query;
+    if (error) return { duplicateModels: [], insertableModels: [], error: true };
+    for (const row of data ?? []) existing.add(row.model);
+  }
+  const duplicateModels = identity.models.filter((m) => existing.has(m));
+  const insertableModels = identity.models.filter((m) => !existing.has(m));
+  return { duplicateModels, insertableModels, error: false };
+}

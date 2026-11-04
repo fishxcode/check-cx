@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { checkConfigDuplicate, DUPLICATE_CONFIG_MESSAGE } from "@/lib/database/config-duplicates";
+import { filterDuplicateModels, DUPLICATE_CONFIG_MESSAGE } from "@/lib/database/config-duplicates";
 import { clearAllCaches } from "@/lib/core/cache-invalidation";
 import { runChecksForConfigs } from "@/lib/core/config-check-execution";
 import type { ProviderConfig, ProviderType } from "@/lib/types";
@@ -47,19 +47,23 @@ export async function POST(request: NextRequest) {
 
     const uniqueModels = [...new Set<string>(models)];
     const admin = createAdminClient();
-    const duplicateCheck = await checkConfigDuplicate(admin, {
+    // 按模型粒度去重：跳过已存在的重复项，只插入非重复项，而不是整批拒绝。
+    const { duplicateModels, insertableModels, error: dupError } = await filterDuplicateModels(admin, {
       type, endpoint, api_key, group_name: group_name || null,
       models: uniqueModels,
     });
-    if (duplicateCheck.error) {
+    if (dupError) {
       return NextResponse.json({ error: "检查配置是否重复失败，请稍后重试" }, { status: 500 });
     }
-    if (duplicateCheck.duplicate) {
-      return NextResponse.json({ error: DUPLICATE_CONFIG_MESSAGE }, { status: 409 });
+    if (insertableModels.length === 0) {
+      return NextResponse.json(
+        { error: DUPLICATE_CONFIG_MESSAGE, skipped: duplicateModels },
+        { status: 409 }
+      );
     }
 
-    // 批量插入配置
-    const configs = uniqueModels.map((model) => ({
+    // 批量插入配置（仅非重复模型）
+    const configs = insertableModels.map((model) => ({
       name: `${type.toUpperCase()} ${model}`,
       type,
       model,
@@ -101,7 +105,10 @@ export async function POST(request: NextRequest) {
       void runChecksForConfigs(firstCheckConfigs).catch(() => {});
     }
 
-    return NextResponse.json({ count: data.length, ids: data.map((d) => d.id) }, { status: 201 });
+    return NextResponse.json(
+      { count: data.length, ids: data.map((d) => d.id), skipped: duplicateModels },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("批量创建配置失败:", error);
     return NextResponse.json(

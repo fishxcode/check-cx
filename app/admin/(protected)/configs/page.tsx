@@ -273,7 +273,13 @@ export default function ConfigsPage() {
     });
     setLoading(false);
     if (res.ok) {
-      setBatchDialogOpen(false);
+      const d = await res.json();
+      if (d.skipped?.length) {
+        setMsg(`已新增 ${d.count} 个配置，跳过 ${d.skipped.length} 个重复模型：${d.skipped.join("、")}`);
+      } else {
+        setBatchDialogOpen(false);
+        setMsg("");
+      }
       load();
     } else {
       const d = await res.json();
