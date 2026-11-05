@@ -61,23 +61,44 @@ class SnapshotStore {
 
     const supabase = createAdminClient();
     const limitPerConfig = options?.limitPerConfig ?? MAX_POINTS_PER_PROVIDER;
-    const { data, error } = await supabase.rpc(
-      RPC_RECENT_HISTORY,
-      {
-        limit_per_config: limitPerConfig,
-        target_config_ids: normalizedIds,
-      }
+
+    // PostgREST 单次最多返回 1000 行。配置一多（约 17 个 × 60 条）就会截断，
+    // 导致后面的配置查不到历史、首页误判为「待检测」。按行数预算分批查询再合并。
+    const rowBudget = 1000;
+    const batchSize = Math.max(
+      1,
+      Math.floor(rowBudget / Math.max(1, limitPerConfig))
+    );
+    const batches: (string[] | null)[] = normalizedIds
+      ? Array.from({ length: Math.ceil(normalizedIds.length / batchSize) }, (_, index) =>
+          normalizedIds.slice(index * batchSize, (index + 1) * batchSize)
+        )
+      : [null];
+
+    const responses = await Promise.all(
+      batches.map((batch) =>
+        supabase.rpc(RPC_RECENT_HISTORY, {
+          limit_per_config: limitPerConfig,
+          target_config_ids: batch,
+        })
+      )
     );
 
-    if (error) {
-      logError("获取历史快照失败", error);
-      if (isMissingFunctionError(error)) {
-        return fallbackFetchSnapshot(supabase, normalizedIds);
+    const rows: RpcHistoryRow[] = [];
+    for (const { data, error } of responses) {
+      if (error) {
+        logError("获取历史快照失败", error);
+        if (isMissingFunctionError(error)) {
+          return fallbackFetchSnapshot(supabase, normalizedIds);
+        }
+        continue;
       }
-      return {};
+      if (Array.isArray(data)) {
+        rows.push(...(data as RpcHistoryRow[]));
+      }
     }
 
-    return mapRowsToSnapshot(data as RpcHistoryRow[] | null, limitPerConfig);
+    return mapRowsToSnapshot(rows, limitPerConfig);
   }
 
   async append(results: CheckResult[], options: {strict?: boolean} = {}): Promise<void> {
