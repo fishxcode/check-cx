@@ -2,7 +2,7 @@ import {randomUUID} from "node:crypto";
 import pLimit from "p-limit";
 
 import {dispatchCheckQueue, executeCheckQueueTask, getCheckQueueConcurrency} from "@/lib/core/check-queue";
-import {acquireCheckQueuePumpLease, releaseCheckQueuePumpLease} from "@/lib/database/check-queue-pump";
+import {abortStaleCheckRun, acquireCheckQueuePumpLease, releaseCheckQueuePumpLease} from "@/lib/database/check-queue-pump";
 
 const EXECUTION_BUDGET_MS = 90_000;
 // 单个检测任务最多占用 30 秒，避免一个慢上游把整批 Promise.all 拖过函数超时。
@@ -29,6 +29,13 @@ export async function runCheckQueuePump() {
   }
 
   try {
+    // 先清理长期停滞的轮次，避免 run 永远停留在 running、日志一直显示「执行中」。
+    await abortStaleCheckRun().then((result) => {
+      if (result.aborted) console.warn("[check-queue-pump] 自动终止停滞轮次", result);
+    }).catch((error) => {
+      console.error("[check-queue-pump] 自动终止检查失败", error instanceof Error ? error.message : "未知错误");
+    });
+
     const limit = pLimit(getCheckQueueConcurrency());
     const deadline = Date.now() + EXECUTION_BUDGET_MS;
     let plan = await dispatchCheckQueue("scheduled");

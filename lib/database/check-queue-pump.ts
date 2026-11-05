@@ -9,6 +9,13 @@ export async function acquireCheckQueuePumpLease(owner: string): Promise<boolean
   return data === true;
 }
 
+export async function abortStaleCheckRun(): Promise<{aborted: boolean; attemptId?: string; stopped?: number}> {
+  const {data, error} = await createAdminClient({requestTimeoutMs: 5_000})
+    .rpc("abort_stale_check_run", {p_max_age_seconds: 3600, p_stale_seconds: 1800});
+  if (error) throw new Error(`终止停滞检测轮次失败：${error.code}`);
+  return data as {aborted: boolean; attemptId?: string; stopped?: number};
+}
+
 export async function releaseCheckQueuePumpLease(owner: string): Promise<void> {
   const {error} = await createAdminClient({requestTimeoutMs: 5_000})
     .rpc("release_check_queue_pump_lease", {p_owner: owner});

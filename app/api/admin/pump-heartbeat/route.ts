@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 
 import {createAdminClient} from "@/lib/supabase/admin";
+import {abortStaleCheckRun} from "@/lib/database/check-queue-pump";
 import {requireAuth} from "../alerts/_auth";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const authError = await requireAuth();
   if (authError) return authError;
+
+  // 即使外部心跳停摆，管理员打开后台也能触发一次停滞轮次清理，避免永久「执行中」。
+  void abortStaleCheckRun().catch(() => {});
 
   const {data, error} = await createAdminClient({requestTimeoutMs: 10_000})
     .from("pump_heartbeats")
