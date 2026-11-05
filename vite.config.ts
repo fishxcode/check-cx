@@ -43,17 +43,23 @@ const stylesheetAliases = [
   { find: /^tw-animate-css$/, replacement: resolveStyleEntry("tw-animate-css") },
 ];
 
+const deployTarget = process.env.DEPLOY_TARGET ?? "vercel";
+
 export default defineConfig({
-  plugins: [vinext(), nitro({
-    preset: "vercel",
-    wasm: false,
-    vercel: {
-      functionRules: {
-        "/api/internal/checks/pump": {maxDuration: 55},
-        "/api/internal/checks/run": {maxDuration: 55},
-        "/api/cron/check": {maxDuration: 55},
-      },
-    },
-  })],
+  plugins: [vinext(), nitro(
+    deployTarget === "docker"
+      ? {preset: "node-server", wasm: false}
+      : {
+          preset: "vercel",
+          wasm: false,
+          vercel: {
+            functionRules: {
+              "/api/internal/checks/pump": {maxDuration: 55},
+              "/api/internal/checks/run": {maxDuration: 55},
+              "/api/cron/check": {maxDuration: 55},
+            },
+          },
+        },
+  )],
   resolve: { alias: stylesheetAliases },
 });

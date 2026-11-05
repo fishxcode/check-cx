@@ -6,6 +6,9 @@ node_modules
 .next
 out
 dist
+.output
+.vinext
+.vercel
 
 # Git
 .git
@@ -36,3 +39,12 @@ coverage
 # Cloudflare (与 Docker 无关)
 .wrangler
 .open-next
+
+# 与镜像运行无关的本地/备份/文档目录
+iamkasong-backup
+.zcf
+.agents
+.claude
+.github
+docs
+openspec
