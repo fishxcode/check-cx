@@ -91,6 +91,24 @@ function matchesConfigStatus(row: ConfigRow, status: string): boolean {
   }
 }
 
+interface PumpHeartbeat {
+  created_at: string;
+  ok: boolean;
+  http_status: number;
+  duration_ms: number | null;
+  message: string | null;
+}
+
+/** 调度心跳距今多久；超过 10 分钟视为停滞。 */
+function heartbeatAge(iso: string): {label: string; stale: boolean} {
+  const diff = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(diff) || diff < 0) return {label: "刚刚", stale: false};
+  if (diff < 60_000) return {label: "刚刚", stale: false};
+  if (diff < 3_600_000) return {label: `${Math.floor(diff / 60_000)} 分钟前`, stale: diff > 10 * 60_000};
+  if (diff < 86_400_000) return {label: `${Math.floor(diff / 3_600_000)} 小时前`, stale: true};
+  return {label: `${Math.floor(diff / 86_400_000)} 天前`, stale: true};
+}
+
 export default function ConfigsPage() {
   const [configs, setConfigs]           = useState<ConfigRow[]>([]);
   const [groups, setGroups]             = useState<string[]>([]);
@@ -132,6 +150,7 @@ export default function ConfigsPage() {
   const [filterType, setFilterType]     = useState("");
   const [filterGroup, setFilterGroup]   = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [heartbeat, setHeartbeat]       = useState<PumpHeartbeat | null>(null);
   // 批量设置对话框
   const [batchGroupOpen, setBatchGroupOpen] = useState(false);
   const [batchGroupValue, setBatchGroupValue] = useState("");
@@ -147,6 +166,8 @@ export default function ConfigsPage() {
       const list: { group_name: string }[] = await gr.json();
       setGroups(list.map((g) => g.group_name));
     }
+    const hr = await fetch("/api/admin/pump-heartbeat");
+    if (hr.ok) setHeartbeat(await hr.json());
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -585,6 +606,8 @@ export default function ConfigsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "无法创建检测任务");
+      // 主动 kick 一次 pump，不再等待 Cloudflare 的 5 分钟心跳。
+      void fetch("/api/admin/configs/batch-test/pump", { method: "POST" }).catch(() => {});
       setBatchProgress(`队列中 0/${ids.length}，等待检测`);
 
       let status = "running";
@@ -710,6 +733,19 @@ export default function ConfigsPage() {
         <span className="text-xs text-muted-foreground">
           共 {filtered.length} / {configs.length} 条
         </span>
+        {heartbeat && (() => {
+          const age = heartbeatAge(heartbeat.created_at);
+          const bad = !heartbeat.ok || age.stale;
+          return (
+            <span
+              className={`text-xs ${bad ? "text-red-600" : "text-muted-foreground"}`}
+              title={heartbeat.message ?? undefined}
+            >
+              调度心跳：{age.label}
+              {!heartbeat.ok ? ` · 失败 ${heartbeat.http_status}` : age.stale ? " · 已停滞" : " · 正常"}
+            </span>
+          );
+        })()}
       </div>
 
       {/* 标签筛选 */}
