@@ -6,7 +6,7 @@ import {touchSchedulerToken, verifySchedulerToken} from "@/lib/database/schedule
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
-export const maxDuration = 55;
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   const authorization = request.headers.get("authorization") ?? "";

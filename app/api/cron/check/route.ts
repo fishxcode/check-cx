@@ -5,7 +5,7 @@ import {runCheckQueuePump} from "@/lib/core/check-queue-pump";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
-export const maxDuration = 55;
+export const maxDuration = 120;
 
 function isAuthorized(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET?.trim();

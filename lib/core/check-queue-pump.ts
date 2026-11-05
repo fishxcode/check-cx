@@ -4,7 +4,23 @@ import pLimit from "p-limit";
 import {dispatchCheckQueue, executeCheckQueueTask, getCheckQueueConcurrency} from "@/lib/core/check-queue";
 import {acquireCheckQueuePumpLease, releaseCheckQueuePumpLease} from "@/lib/database/check-queue-pump";
 
-const EXECUTION_BUDGET_MS = 45_000;
+const EXECUTION_BUDGET_MS = 90_000;
+// 单个检测任务最多占用 30 秒，避免一个慢上游把整批 Promise.all 拖过函数超时。
+const TASK_TIMEOUT_MS = 30_000;
+
+type TaskOutcome = Awaited<ReturnType<typeof executeCheckQueueTask>>;
+
+async function executeWithTimeout(taskId: string): Promise<TaskOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<TaskOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({retry: true, tasks: []}), TASK_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([executeCheckQueueTask(taskId), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function runCheckQueuePump() {
   const owner = randomUUID();
@@ -24,7 +40,7 @@ export async function runCheckQueuePump() {
 
     while (plan.tasks.length > 0 && Date.now() < deadline) {
       const outcomes = await Promise.all(
-        plan.tasks.map((taskId) => limit(() => executeCheckQueueTask(taskId)))
+        plan.tasks.map((taskId) => limit(() => executeWithTimeout(taskId)))
       );
       dispatched += plan.queuedCount;
       retried += outcomes.filter((outcome) => outcome.retry).length;
