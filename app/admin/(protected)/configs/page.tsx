@@ -78,6 +78,19 @@ const TEST_STATUS_STYLES: Record<string, string> = {
   error:             "bg-red-500/10 text-red-600",
 };
 
+/** 配置状态维度：启用 / 停用 / 维护 / 同步停用 / 暂停 / 锁定。 */
+function matchesConfigStatus(row: ConfigRow, status: string): boolean {
+  switch (status) {
+    case "enabled":       return row.enabled && !row.is_maintenance;
+    case "disabled":      return !row.enabled;
+    case "maintenance":   return row.is_maintenance;
+    case "sync_disabled": return Boolean(row.sync_disabled);
+    case "paused":        return Boolean(row.paused_until && Date.parse(row.paused_until) > Date.now());
+    case "locked":        return Boolean(row.locked);
+    default:              return true;
+  }
+}
+
 export default function ConfigsPage() {
   const [configs, setConfigs]           = useState<ConfigRow[]>([]);
   const [groups, setGroups]             = useState<string[]>([]);
@@ -115,6 +128,10 @@ export default function ConfigsPage() {
   const [lockRow, setLockRow]           = useState<{ row: ConfigRow; mode: "lock" | "unlock" } | null>(null);
   const [lockReason, setLockReason]     = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // 维度筛选：类型 / 分组 / 状态
+  const [filterType, setFilterType]     = useState("");
+  const [filterGroup, setFilterGroup]   = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   // 批量设置对话框
   const [batchGroupOpen, setBatchGroupOpen] = useState(false);
   const [batchGroupValue, setBatchGroupValue] = useState("");
@@ -179,6 +196,8 @@ export default function ConfigsPage() {
   }
 
   const allTags = Array.from(new Set(configs.flatMap((c) => c.tags ?? []))).sort();
+  const allTypes = Array.from(new Set(configs.map((c) => c.type))).sort();
+  const allGroups = Array.from(new Set(configs.map((c) => c.group_name ?? "__none__"))).sort();
 
   const filtered = configs.filter((r) => {
     if (search.trim()) {
@@ -193,6 +212,9 @@ export default function ConfigsPage() {
       const tags = r.tags ?? [];
       if (!selectedTags.every((t) => tags.includes(t))) return false;
     }
+    if (filterType && r.type !== filterType) return false;
+    if (filterGroup && (r.group_name ?? "__none__") !== filterGroup) return false;
+    if (filterStatus && !matchesConfigStatus(r, filterStatus)) return false;
     return true;
   });
 
@@ -644,6 +666,50 @@ export default function ConfigsPage() {
           <Plus className="h-4 w-4" />
           新建配置
         </button>
+      </div>
+
+      {/* 维度筛选：类型 / 状态 / 分组 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={filterType}
+          onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">全部类型</option>
+          {allTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+        <select
+          value={filterStatus}
+          onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">全部状态</option>
+          <option value="enabled">启用中</option>
+          <option value="disabled">已停用</option>
+          <option value="maintenance">维护中</option>
+          <option value="sync_disabled">同步停用</option>
+          <option value="paused">已暂停</option>
+          <option value="locked">已锁定</option>
+        </select>
+        <select
+          value={filterGroup}
+          onChange={(e) => { setFilterGroup(e.target.value); setPage(1); }}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">全部分组</option>
+          {allGroups.map((group) => <option key={group} value={group}>{group === "__none__" ? "未分组" : group}</option>)}
+        </select>
+        {(filterType || filterGroup || filterStatus) && (
+          <button
+            onClick={() => { setFilterType(""); setFilterGroup(""); setFilterStatus(""); setPage(1); }}
+            className="h-8 rounded-md border border-input bg-background px-3 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            清除筛选
+          </button>
+        )}
+        <span className="text-xs text-muted-foreground">
+          共 {filtered.length} / {configs.length} 条
+        </span>
       </div>
 
       {/* 标签筛选 */}
